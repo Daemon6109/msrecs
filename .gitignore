@@ -5,6 +5,7 @@ include
 # output
 out
 dist
+playground/.gui
 *.tgz
 *.rbxl
 game-output.log

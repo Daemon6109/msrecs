@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>MSRECS Tower Defense</title>
+		<style>
+			:root {
+				color-scheme: dark;
+				font-family:
+					Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+					"Segoe UI", sans-serif;
+				background: #101418;
+				color: #edf2f7;
+			}
+
+			body {
+				margin: 0;
+				min-height: 100vh;
+				display: grid;
+				grid-template-columns: minmax(720px, 1fr) 320px;
+				background: #101418;
+			}
+
+			main {
+				display: grid;
+				place-items: center;
+				padding: 24px;
+			}
+
+			canvas {
+				width: min(100%, 1120px);
+				aspect-ratio: 16 / 9;
+				background: #182027;
+				border: 1px solid #2d3742;
+				box-shadow: 0 18px 48px rgb(0 0 0 / 0.32);
+			}
+
+			aside {
+				border-left: 1px solid #2d3742;
+				background: #151b21;
+				padding: 18px;
+				display: flex;
+				flex-direction: column;
+				gap: 16px;
+			}
+
+			h1,
+			h2,
+			p {
+				margin: 0;
+			}
+
+			h1 {
+				font-size: 20px;
+			}
+
+			h2 {
+				font-size: 13px;
+				color: #9fb0c0;
+				text-transform: uppercase;
+				letter-spacing: 0.08em;
+			}
+
+			button {
+				border: 1px solid #3b4652;
+				background: #202a33;
+				color: #edf2f7;
+				border-radius: 6px;
+				padding: 10px 12px;
+				font: inherit;
+				cursor: pointer;
+			}
+
+			button:hover {
+				background: #293542;
+			}
+
+			button[data-active="true"] {
+				border-color: #8bd450;
+				background: #25351d;
+			}
+
+			.panel {
+				display: grid;
+				gap: 10px;
+			}
+
+			.stats {
+				display: grid;
+				grid-template-columns: 1fr 1fr;
+				gap: 8px;
+			}
+
+			.stat {
+				border: 1px solid #2d3742;
+				border-radius: 6px;
+				padding: 10px;
+				background: #10161c;
+			}
+
+			.stat span {
+				display: block;
+				color: #9fb0c0;
+				font-size: 12px;
+			}
+
+			.stat strong {
+				font-size: 20px;
+			}
+
+			#log {
+				min-height: 96px;
+				white-space: pre-line;
+				color: #b9c7d3;
+				font-size: 13px;
+			}
+
+			@media (max-width: 980px) {
+				body {
+					grid-template-columns: 1fr;
+				}
+
+				aside {
+					border-left: 0;
+					border-top: 1px solid #2d3742;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<canvas id="game" width="1120" height="630"></canvas>
+		</main>
+		<aside>
+			<div class="panel">
+				<h1>MSRECS Tower Defense</h1>
+				<p id="hint">Select a tower, click a build pad, start the wave.</p>
+			</div>
+			<div class="panel">
+				<h2>Build</h2>
+				<button type="button" data-tower="Scout">Scout - 45g</button>
+				<button type="button" data-tower="Cannon">Cannon - 75g</button>
+				<button type="button" data-tower="Ranger">Ranger - 95g</button>
+			</div>
+			<div class="panel">
+				<h2>Actions</h2>
+				<button type="button" id="start">Start Wave</button>
+				<button type="button" id="upgrade">Upgrade Selected</button>
+				<button type="button" id="reset">Reset</button>
+			</div>
+			<div class="stats">
+				<div class="stat"><span>Lives</span><strong id="lives">0</strong></div>
+				<div class="stat"><span>Gold</span><strong id="gold">0</strong></div>
+				<div class="stat"><span>Wave</span><strong id="wave">0</strong></div>
+				<div class="stat"><span>Kills</span><strong id="kills">0</strong></div>
+			</div>
+			<div class="panel">
+				<h2>Selected</h2>
+				<p id="selected">None</p>
+			</div>
+			<div class="panel">
+				<h2>Log</h2>
+				<p id="log"></p>
+			</div>
+		</aside>
+		<script type="module" src="/gui.js"></script>
+	</body>
+</html>

@@ -240,15 +240,17 @@ export function createScheduler(): Scheduler {
 						return;
 					}
 
-					world.queryObject([Position, Enemy]).each((enemy, position, data) => {
-						position.x += data.speed * deltaTime;
+					world
+						.queryObject([Position, Enemy] as const)
+						.each((enemy, position, data) => {
+							position.x += data.speed * deltaTime;
 
-						if (position.x >= BaseX) {
-							game.lives--;
-							game.escaped++;
-							world.deleteEntity(enemy);
-						}
-					});
+							if (position.x >= BaseX) {
+								game.lives--;
+								game.escaped++;
+								world.deleteEntity(enemy);
+							}
+						});
 				},
 			}),
 		)
@@ -262,10 +264,10 @@ export function createScheduler(): Scheduler {
 						return;
 					}
 
-					const enemies = world.queryObject([Position, Enemy, Health]);
+					const enemies = world.queryObject([Position, Enemy, Health] as const);
 
 					world
-						.queryObject([Position, Tower])
+						.queryObject([Position, Tower] as const)
 						.each((towerEntity, towerPosition, tower) => {
 							tower.remainingCooldown = Math.max(
 								0,
@@ -327,7 +329,7 @@ export function createScheduler(): Scheduler {
 			defineSystem("shot-lifetime", () => undefined, {
 				phase: "cleanup",
 				onFixedUpdate: (world, deltaTime) => {
-					world.queryObject([Shot]).each((shotEntity, shot) => {
+					world.queryObject([Shot] as const).each((shotEntity, shot) => {
 						shot.age += deltaTime;
 
 						if (shot.age >= shot.lifetime) {
@@ -366,19 +368,21 @@ export function render(world: World): string {
 
 	plot(grid, BaseX, PathY, "B");
 
-	world.queryObject([Shot]).each((_shotEntity, shot) => {
+	world.queryObject([Shot] as const).each((_shotEntity, shot) => {
 		const alpha = Math.min(1, shot.age / shot.lifetime);
 		const x = shot.from.x + (shot.to.x - shot.from.x) * alpha;
 		const y = shot.from.y + (shot.to.y - shot.from.y) * alpha;
 		plot(grid, x, y, "*");
 	});
 
-	world.queryObject([Position, Tower]).each((_towerEntity, position) => {
-		plot(grid, position.x, position.y, "T");
-	});
+	world
+		.queryObject([Position, Tower] as const)
+		.each((_towerEntity, position) => {
+			plot(grid, position.x, position.y, "T");
+		});
 
 	world
-		.queryObject([Position, Enemy, Health])
+		.queryObject([Position, Enemy, Health] as const)
 		.each((_enemy, position, _data, health) => {
 			const symbol = health.current / health.max > 0.5 ? "E" : "e";
 			plot(grid, position.x, position.y, symbol);
@@ -440,7 +444,7 @@ function renderStats(world: World): string {
 function renderTowers(world: World): string {
 	const towers: string[] = [];
 
-	world.queryObject([Tower]).each((_towerEntity, tower) => {
+	world.queryObject([Tower] as const).each((_towerEntity, tower) => {
 		towers.push(
 			`${tower.name}:dmg=${tower.damage}:range=${tower.range}:kills=${tower.kills}`,
 		);
