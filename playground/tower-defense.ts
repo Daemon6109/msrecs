@@ -1,6 +1,7 @@
 import "../tests/shims/roblox-globals";
 import {
 	defineComponent,
+	defineRelation,
 	defineResource,
 	defineSystem,
 	Scheduler,
@@ -15,6 +16,7 @@ interface Position {
 interface EnemyData {
 	speed: number;
 	reward: number;
+	wave: number;
 }
 
 interface Health {
@@ -23,55 +25,88 @@ interface Health {
 }
 
 interface TowerData {
+	name: string;
 	range: number;
 	damage: number;
 	cooldown: number;
 	remainingCooldown: number;
+	kills: number;
+}
+
+interface ShotData {
+	from: Position;
+	to: Position;
+	age: number;
+	lifetime: number;
+}
+
+interface WaveData {
+	count: number;
+	health: number;
+	speed: number;
+	reward: number;
+	spawnInterval: number;
 }
 
 interface GameState {
 	time: number;
 	lives: number;
 	gold: number;
-	wave: number;
-	spawned: number;
+	waveIndex: number;
+	waveSpawned: number;
 	killed: number;
 	escaped: number;
 	spawnTimer: number;
+	finished: boolean;
 }
 
 const Position = defineComponent<Position>("Position");
 const Enemy = defineComponent<EnemyData>("Enemy");
 const Health = defineComponent<Health>("Health");
 const Tower = defineComponent<TowerData>("Tower");
+const Shot = defineComponent<ShotData>("Shot");
 const Game = defineResource<GameState>("Game");
+const Targeting = defineRelation<{ acquiredAt: number }>("Targeting");
 
+const MapWidth = 72;
+const MapHeight = 15;
+const PathY = 7;
 const PathStart = 0;
-const BaseX = 100;
-const EnemyCount = 14;
+const BaseX = MapWidth - 2;
+const FixedStep = 0.1;
+const RenderEveryFrames = 20;
+
+const Waves: WaveData[] = [
+	{ count: 10, health: 45, speed: 7.2, reward: 10, spawnInterval: 0.65 },
+	{ count: 14, health: 70, speed: 8.4, reward: 13, spawnInterval: 0.55 },
+	{ count: 18, health: 105, speed: 9.2, reward: 16, spawnInterval: 0.48 },
+];
 
 function setupWorld(): World {
 	const world = new World();
 
 	world.setResource(Game, {
 		time: 0,
-		lives: 10,
-		gold: 100,
-		wave: 1,
-		spawned: 0,
+		lives: 20,
+		gold: 130,
+		waveIndex: 0,
+		waveSpawned: 0,
 		killed: 0,
 		escaped: 0,
 		spawnTimer: 0,
+		finished: false,
 	});
 
-	spawnTower(world, 28, 0, 26, 18, 0.6);
-	spawnTower(world, 58, 0, 22, 30, 0.9);
+	spawnTower(world, "Scout", 18, PathY - 3, 18, 16, 0.55);
+	spawnTower(world, "Cannon", 37, PathY + 3, 20, 34, 1.05);
+	spawnTower(world, "Ranger", 56, PathY - 2, 24, 24, 0.75);
 
 	return world;
 }
 
 function spawnTower(
 	world: World,
+	name: string,
 	x: number,
 	y: number,
 	range: number,
@@ -82,29 +117,53 @@ function spawnTower(
 
 	world.set(tower, Position, { x, y });
 	world.set(tower, Tower, {
+		name,
 		range,
 		damage,
 		cooldown,
 		remainingCooldown: 0,
+		kills: 0,
 	});
 }
 
-function spawnEnemy(world: World, index: number): void {
+function spawnEnemy(
+	world: World,
+	waveIndex: number,
+	spawnedInWave: number,
+): void {
+	const wave = Waves[waveIndex];
+
+	if (wave === undefined) {
+		return;
+	}
+
 	const commands = world.commands();
 	const enemy = commands.spawn();
-	const bonusHealth = Math.floor(index / 4) * 10;
+	const health = wave.health + Math.floor(spawnedInWave / 5) * 8;
 
 	commands
-		.set(enemy, Position, { x: PathStart, y: 0 })
+		.set(enemy, Position, { x: PathStart, y: PathY })
 		.set(enemy, Enemy, {
-			speed: 7 + index * 0.15,
-			reward: 10,
+			speed: wave.speed + spawnedInWave * 0.05,
+			reward: wave.reward,
+			wave: waveIndex + 1,
 		})
 		.set(enemy, Health, {
-			current: 45 + bonusHealth,
-			max: 45 + bonusHealth,
+			current: health,
+			max: health,
 		})
 		.flush(world);
+}
+
+function spawnShot(world: World, from: Position, to: Position): void {
+	const shot = world.createEntity();
+
+	world.set(shot, Shot, {
+		from: { x: from.x, y: from.y },
+		to: { x: to.x, y: to.y },
+		age: 0,
+		lifetime: 0.22,
+	});
 }
 
 function distanceSquared(a: Position, b: Position): number {
@@ -116,18 +175,38 @@ function distanceSquared(a: Position, b: Position): number {
 
 function createScheduler(): Scheduler {
 	return new Scheduler()
-		.withFixedStep(0.1)
+		.withFixedStep(FixedStep)
 		.phase("spawn")
 		.phase("simulate")
 		.phase("combat")
 		.phase("cleanup")
 		.add(
-			defineSystem("spawn-wave", () => undefined, {
+			defineSystem("spawn-waves", () => undefined, {
 				phase: "spawn",
 				onFixedUpdate: (world, deltaTime) => {
 					const game = world.getResource(Game);
 
-					if (game === undefined || game.spawned >= EnemyCount) {
+					if (game === undefined || game.finished) {
+						return;
+					}
+
+					const wave = Waves[game.waveIndex];
+
+					if (wave === undefined) {
+						if (world.query(Enemy).size() === 0) {
+							game.finished = true;
+						}
+
+						return;
+					}
+
+					if (game.waveSpawned >= wave.count) {
+						if (world.query(Enemy).size() === 0) {
+							game.waveIndex++;
+							game.waveSpawned = 0;
+							game.spawnTimer = 1.5;
+						}
+
 						return;
 					}
 
@@ -137,9 +216,9 @@ function createScheduler(): Scheduler {
 						return;
 					}
 
-					spawnEnemy(world, game.spawned);
-					game.spawned++;
-					game.spawnTimer = 0.65;
+					spawnEnemy(world, game.waveIndex, game.waveSpawned);
+					game.waveSpawned++;
+					game.spawnTimer = wave.spawnInterval;
 				},
 			}),
 		)
@@ -179,7 +258,7 @@ function createScheduler(): Scheduler {
 
 					world
 						.queryObject([Position, Tower])
-						.each((_tower, towerPosition, tower) => {
+						.each((towerEntity, towerPosition, tower) => {
 							tower.remainingCooldown = Math.max(
 								0,
 								tower.remainingCooldown - deltaTime,
@@ -190,6 +269,7 @@ function createScheduler(): Scheduler {
 							}
 
 							let target = 0;
+							let targetPosition: Position | undefined;
 							let targetHealth: Health | undefined;
 							let farthestProgress = -Infinity;
 
@@ -203,15 +283,24 @@ function createScheduler(): Scheduler {
 
 								if (enemyPosition.x > farthestProgress) {
 									target = enemy;
+									targetPosition = enemyPosition;
 									targetHealth = health;
 									farthestProgress = enemyPosition.x;
 								}
 							});
 
-							if (target === 0 || targetHealth === undefined) {
+							if (
+								target === 0 ||
+								targetPosition === undefined ||
+								targetHealth === undefined
+							) {
 								return;
 							}
 
+							world.setRelation(towerEntity, Targeting, target, {
+								acquiredAt: game.time,
+							});
+							spawnShot(world, towerPosition, targetPosition);
 							targetHealth.current -= tower.damage;
 							tower.remainingCooldown = tower.cooldown;
 
@@ -219,9 +308,24 @@ function createScheduler(): Scheduler {
 								const enemyData = world.get(target, Enemy);
 								game.gold += enemyData?.reward ?? 0;
 								game.killed++;
+								tower.kills++;
 								world.deleteEntity(target);
 							}
 						});
+				},
+			}),
+		)
+		.add(
+			defineSystem("shot-lifetime", () => undefined, {
+				phase: "cleanup",
+				onFixedUpdate: (world, deltaTime) => {
+					world.queryObject([Shot]).each((shotEntity, shot) => {
+						shot.age += deltaTime;
+
+						if (shot.age >= shot.lifetime) {
+							world.deleteEntity(shotEntity);
+						}
+					});
 				},
 			}),
 		)
@@ -239,55 +343,140 @@ function createScheduler(): Scheduler {
 		);
 }
 
-function printState(world: World): void {
-	const game = world.getResource(Game);
+function render(world: World): string {
+	const grid: string[][] = [];
 
-	if (game === undefined) {
+	for (let y = 0; y < MapHeight; y++) {
+		const row: string[] = [];
+
+		for (let x = 0; x < MapWidth; x++) {
+			row.push(y === PathY ? "." : " ");
+		}
+
+		grid.push(row);
+	}
+
+	plot(grid, BaseX, PathY, "B");
+
+	world.queryObject([Shot]).each((_shotEntity, shot) => {
+		const alpha = Math.min(1, shot.age / shot.lifetime);
+		const x = shot.from.x + (shot.to.x - shot.from.x) * alpha;
+		const y = shot.from.y + (shot.to.y - shot.from.y) * alpha;
+		plot(grid, x, y, "*");
+	});
+
+	world.queryObject([Position, Tower]).each((_towerEntity, position) => {
+		plot(grid, position.x, position.y, "T");
+	});
+
+	world
+		.queryObject([Position, Enemy, Health])
+		.each((_enemy, position, _data, health) => {
+			const symbol = health.current / health.max > 0.5 ? "E" : "e";
+			plot(grid, position.x, position.y, symbol);
+		});
+
+	const lines: string[] = [];
+
+	for (const row of grid) {
+		lines.push(`|${row.join("")}|`);
+	}
+
+	lines.push(renderStats(world));
+	lines.push(renderTowers(world));
+
+	return lines.join("\n");
+}
+
+function plot(grid: string[][], x: number, y: number, symbol: string): void {
+	const gridX = Math.floor(x);
+	const gridY = Math.floor(y);
+
+	if (gridY < 0 || gridY >= grid.size()) {
 		return;
 	}
 
-	const aliveEnemies = world.query(Enemy).size();
-	const firstEnemy = world.queryObject([Position, Enemy, Health]).first();
-	const firstEnemyPosition =
-		firstEnemy === undefined ? undefined : world.get(firstEnemy, Position);
+	const row = grid[gridY];
 
-	const progress =
-		firstEnemyPosition === undefined
-			? "none"
-			: `${firstEnemyPosition.x.toFixed(1)}/${BaseX}`;
+	if (row === undefined || gridX < 0 || gridX >= row.size()) {
+		return;
+	}
 
-	console.log(
-		`time=${game.time.toFixed(1)} wave=${game.wave} lives=${game.lives} gold=${game.gold} spawned=${game.spawned}/${EnemyCount} alive=${aliveEnemies} killed=${game.killed} escaped=${game.escaped} lead=${progress}`,
-	);
+	row[gridX] = symbol;
+}
+
+function renderStats(world: World): string {
+	const game = world.getResource(Game);
+
+	if (game === undefined) {
+		return "missing game state";
+	}
+
+	const activeWave = Waves[game.waveIndex];
+	const waveText =
+		activeWave === undefined
+			? "complete"
+			: `${game.waveIndex + 1}/${Waves.size()} ${game.waveSpawned}/${activeWave.count}`;
+
+	return [
+		`time=${game.time.toFixed(1)}`,
+		`wave=${waveText}`,
+		`lives=${game.lives}`,
+		`gold=${game.gold}`,
+		`alive=${world.query(Enemy).size()}`,
+		`killed=${game.killed}`,
+		`escaped=${game.escaped}`,
+	].join("  ");
+}
+
+function renderTowers(world: World): string {
+	const towers: string[] = [];
+
+	world.queryObject([Tower]).each((_towerEntity, tower) => {
+		towers.push(
+			`${tower.name}:dmg=${tower.damage}:range=${tower.range}:kills=${tower.kills}`,
+		);
+	});
+
+	return towers.join("  ");
+}
+
+function shouldStop(world: World): boolean {
+	const game = world.getResource(Game);
+
+	if (game === undefined) {
+		return true;
+	}
+
+	return game.lives <= 0 || game.finished;
 }
 
 function run(): void {
 	const world = setupWorld();
 	const scheduler = createScheduler();
+	const frames: string[] = [];
 
-	console.log("MSRECS tower defense playground");
-	printState(world);
+	frames.push("MSRECS tower defense playground");
+	frames.push(render(world));
 
-	for (let frame = 0; frame < 220; frame++) {
-		const game = world.getResource(Game);
-
-		if (game === undefined || game.lives <= 0) {
+	for (let frame = 0; frame < 420; frame++) {
+		if (shouldStop(world)) {
 			break;
 		}
 
-		if (game.spawned >= EnemyCount && world.query(Enemy).size() === 0) {
-			break;
-		}
+		scheduler.fixedUpdate(world, FixedStep);
 
-		scheduler.fixedUpdate(world, 0.1);
-
-		if (frame % 5 === 0) {
-			printState(world);
+		if (frame % RenderEveryFrames === 0) {
+			frames.push(render(world));
 		}
 	}
 
-	printState(world);
-	console.log("system timings", scheduler.inspect());
+	frames.push(render(world));
+	frames.push(
+		`system timings: ${JSON.stringify(scheduler.inspect(), undefined, 2)}`,
+	);
+
+	console.log(frames.join("\n\n"));
 }
 
 run();
