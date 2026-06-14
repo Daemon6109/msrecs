@@ -7,6 +7,8 @@ out
 dist
 *.tgz
 *.rbxl
+game-output.log
+jest-output.log
 
 # code coverage
 coverage
