@@ -1,5 +1,18 @@
 import { describe, expect, it } from "bun:test";
-import { World } from "../src/index";
+import { defineComponent, World } from "../src/index";
+
+interface Position {
+	x: number;
+	y: number;
+}
+
+interface Health {
+	current: number;
+	max: number;
+}
+
+const Position = defineComponent<Position>("Position");
+const Health = defineComponent<Health>("Health");
 
 describe("World", () => {
 	it("creates a world", () => {
@@ -111,5 +124,31 @@ describe("World", () => {
 		expect(() => {
 			world.addComponent(entity, "Position", { x: 1, y: 2 });
 		}).toThrow();
+	});
+
+	it("adds and gets a typed component", () => {
+		const world = new World();
+		const entity = world.createEntity();
+
+		world.addComponent(entity, Position, { x: 4, y: 9 });
+
+		expect(world.getComponent(entity, Position)).toEqual({ x: 4, y: 9 });
+	});
+
+	it("queries living entities with all requested components", () => {
+		const world = new World();
+		const tower = world.createEntity();
+		const enemy = world.createEntity();
+		const deadTower = world.createEntity();
+
+		world.addComponent(tower, Position, { x: 0, y: 0 });
+		world.addComponent(tower, Health, { current: 100, max: 100 });
+		world.addComponent(enemy, Position, { x: 10, y: 5 });
+		world.addComponent(deadTower, Position, { x: 2, y: 2 });
+		world.addComponent(deadTower, Health, { current: 1, max: 100 });
+		world.deleteEntity(deadTower);
+
+		expect(world.query(Position)).toEqual([tower, enemy]);
+		expect(world.query(Position, Health)).toEqual([tower]);
 	});
 });

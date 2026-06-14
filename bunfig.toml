@@ -1,0 +1,2 @@
+[test]
+preload = ["./tests/shims/roblox-globals.ts"]

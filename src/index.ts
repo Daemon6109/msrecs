@@ -3,11 +3,21 @@
 // Started 6/14/2026
 
 export type Entity = number;
-export type ComponentType<T> = string;
+
+export interface Component<T> {
+	readonly id: string;
+	readonly _type?: T;
+}
+
+export type ComponentType<T> = string | Component<T>;
 
 interface EntityRecord {
 	alive: boolean;
 	generation: number;
+}
+
+export function defineComponent<T>(id: string): Component<T> {
+	return { id };
 }
 
 export class World {
@@ -15,7 +25,6 @@ export class World {
 	private records = new Map<Entity, EntityRecord>();
 	private components = new Map<string, Map<Entity, unknown>>();
 
-	// this creates and returns a new entity, it sets it alive meaning it is active, and initializes the generation number to 0
 	public createEntity(): Entity {
 		const entity = this.nextEntityId++;
 
@@ -32,8 +41,7 @@ export class World {
 		return this.records.get(entity)?.alive === true;
 	}
 
-	// this deletes the entity by setting it to alive = false which means it no longer is active and cannot be used, it then increments to generaiton to establish a new record
-	public deleteEntity(entity: Entity) {
+	public deleteEntity(entity: Entity): void {
 		const record = this.records.get(entity);
 
 		if (record === undefined || !record.alive) {
@@ -48,21 +56,21 @@ export class World {
 		});
 	}
 
-	// checks if the entity is dead or not, and then it gets the component store and sees whether it already exists or not, and ten it creates a new map with the entity as the index and the unknown value as the value, and then it sets it inside the component store under the components id
 	public addComponent<T>(
 		entity: Entity,
 		componentType: ComponentType<T>,
 		component: T,
-	) {
+	): void {
 		if (!this.isAlive(entity)) {
 			error(`Cannot add component to dead entity: ${entity}`);
 		}
 
-		let componentStore = this.components.get(componentType);
+		const componentId = this.getComponentId(componentType);
+		let componentStore = this.components.get(componentId);
 
 		if (componentStore === undefined) {
 			componentStore = new Map<Entity, unknown>();
-			this.components.set(componentType, componentStore);
+			this.components.set(componentId, componentStore);
 		}
 
 		componentStore.set(entity, component);
@@ -76,13 +84,14 @@ export class World {
 			return undefined;
 		}
 
-		return this.components.get(componentType)?.get(entity) as T | undefined;
+		return this.components.get(this.getComponentId(componentType))?.get(entity) as T | undefined;
 	}
+
 	public removeComponent<T>(
 		entity: Entity,
 		componentType: ComponentType<T>,
 	): void {
-		this.components.get(componentType)?.delete(entity);
+		this.components.get(this.getComponentId(componentType))?.delete(entity);
 	}
 
 	public hasComponent<T>(
@@ -92,6 +101,34 @@ export class World {
 		if (!this.isAlive(entity)) {
 			return false;
 		}
-		return this.components.get(componentType)?.has(entity) === true;
+		return this.components.get(this.getComponentId(componentType))?.has(entity) === true;
+	}
+
+	public query(...componentTypes: ComponentType<unknown>[]): Entity[] {
+		const entities: Entity[] = [];
+
+		this.records.forEach((record, entity) => {
+			if (!record.alive) {
+				return;
+			}
+
+			for (const componentType of componentTypes) {
+				if (!this.hasComponent(entity, componentType)) {
+					return;
+				}
+			}
+
+			entities.push(entity);
+		});
+
+		return entities;
+	}
+
+	private getComponentId<T>(componentType: ComponentType<T>): string {
+		if (typeOf(componentType) === "string") {
+			return componentType as string;
+		}
+
+		return componentType.id;
 	}
 }
