@@ -18,6 +18,9 @@ const globals = globalThis as Record<string, unknown>;
 
 globals.error ??= robloxError;
 globals.typeOf ??= robloxTypeOf;
+globals.os ??= {
+	clock: () => performance.now() / 1000,
+};
 
 const arrayPrototype = Array.prototype as Record<string, unknown>;
 

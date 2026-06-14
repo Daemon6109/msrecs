@@ -26,7 +26,7 @@ function runBenchmark(
 	console.log(`${name}: ${average.toFixed(3)}ms avg over ${iterations} runs`);
 }
 
-runBenchmark("create 10,000 entities", 100, () => {
+runBenchmark("create 10,000 entities", 25, () => {
 	const world = new World();
 
 	for (let index = 0; index < 10_000; index++) {
@@ -34,7 +34,7 @@ runBenchmark("create 10,000 entities", 100, () => {
 	}
 });
 
-runBenchmark("set/get 10,000 position components", 100, () => {
+runBenchmark("set/get 10,000 position components", 25, () => {
 	const world = new World();
 	const entities: number[] = [];
 
@@ -49,7 +49,7 @@ runBenchmark("set/get 10,000 position components", 100, () => {
 	}
 });
 
-runBenchmark("query 10,000 entities with two components", 100, () => {
+runBenchmark("query 10,000 entities with two components", 25, () => {
 	const world = new World();
 
 	for (let index = 0; index < 10_000; index++) {
@@ -64,7 +64,7 @@ runBenchmark("query 10,000 entities with two components", 100, () => {
 	world.query(Position, Velocity);
 });
 
-runBenchmark("cached query 10,000 entities with two components", 100, () => {
+runBenchmark("cached query 10,000 entities with two components", 25, () => {
 	const world = new World();
 
 	for (let index = 0; index < 10_000; index++) {
@@ -80,7 +80,26 @@ runBenchmark("cached query 10,000 entities with two components", 100, () => {
 	world.queryCached(Position, Velocity);
 });
 
-runBenchmark("queryEach movement over 5,000 matching entities", 100, () => {
+runBenchmark("query object over 5,000 matching entities", 25, () => {
+	const world = new World();
+
+	for (let index = 0; index < 10_000; index++) {
+		const entity = world.createEntity();
+		world.set(entity, Position, { x: index, y: index });
+
+		if (index % 2 === 0) {
+			world.set(entity, Velocity, { x: 1, y: 1 });
+		}
+	}
+
+	const query = world.queryObject([Position, Velocity]);
+	query.each((_entity, position, velocity) => {
+		position.x += velocity.x;
+		position.y += velocity.y;
+	});
+});
+
+runBenchmark("queryEach movement over 5,000 matching entities", 25, () => {
 	const world = new World();
 
 	for (let index = 0; index < 10_000; index++) {
@@ -98,7 +117,7 @@ runBenchmark("queryEach movement over 5,000 matching entities", 100, () => {
 	});
 });
 
-runBenchmark("query 10,000 entities with three components", 100, () => {
+runBenchmark("query 10,000 entities with three components", 25, () => {
 	const world = new World();
 
 	for (let index = 0; index < 10_000; index++) {
@@ -114,7 +133,7 @@ runBenchmark("query 10,000 entities with three components", 100, () => {
 	world.query(Position, Velocity, Health);
 });
 
-runBenchmark("flush command buffer with 10,000 component writes", 100, () => {
+runBenchmark("flush command buffer with 10,000 component writes", 25, () => {
 	const world = new World();
 	const commands = world.commands();
 
@@ -124,4 +143,16 @@ runBenchmark("flush command buffer with 10,000 component writes", 100, () => {
 	}
 
 	commands.flush(world);
+});
+
+runBenchmark("snapshot and restore 10,000 positioned entities", 10, () => {
+	const world = new World();
+
+	for (let index = 0; index < 10_000; index++) {
+		const entity = world.createEntity();
+		world.set(entity, Position, { x: index, y: index });
+	}
+
+	const snapshot = world.snapshot();
+	world.restore(snapshot);
 });

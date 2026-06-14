@@ -1,6 +1,9 @@
 declare global {
 	const error: (message: string) => never;
 	const typeOf: (value: unknown) => string;
+	const os: {
+		clock(): number;
+	};
 
 	interface Array<T> {
 		clear(): void;

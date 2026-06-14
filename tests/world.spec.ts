@@ -346,6 +346,30 @@ describe("World", () => {
 		expect(world.queryCached(Position)).toEqual([second]);
 	});
 
+	it("supports reusable query objects with cached iteration helpers", () => {
+		const world = new World();
+		const first = world.createEntity();
+		const second = world.createEntity();
+		const query = world.queryObject([Position, Velocity]);
+		const moved: number[] = [];
+
+		world.set(first, Position, { x: 0, y: 0 });
+		world.set(first, Velocity, { x: 1, y: 1 });
+		world.set(second, Position, { x: 10, y: 10 });
+
+		expect(query.count()).toBe(1);
+		expect(query.first()).toBe(first);
+
+		query.each((entity, position, velocity) => {
+			position.x += velocity.x;
+			position.y += velocity.y;
+			moved.push(entity);
+		});
+
+		expect(moved).toEqual([first]);
+		expect(world.get(first, Position)).toEqual({ x: 1, y: 1 });
+	});
+
 	it("tracks entity archetypes as sorted component ids", () => {
 		const world = new World();
 		const entity = world.createEntity();
@@ -369,25 +393,65 @@ describe("World", () => {
 		const world = new World();
 		const entity = world.createEntity();
 
+		world.advanceTick();
 		world.set(entity, Health, { current: 10, max: 100 });
 
 		expect(world.added(Health)).toEqual([entity]);
+		expect(world.addedChanges(Health)).toEqual([{ entity, tick: 1 }]);
 		expect(world.changed(Health)).toEqual([]);
 		expect(world.removed(Health)).toEqual([]);
 
+		world.advanceTick();
 		world.set(entity, Health, { current: 20, max: 100 });
 
 		expect(world.changed(Health)).toEqual([entity]);
+		expect(world.changedChanges(Health)).toEqual([{ entity, tick: 2 }]);
 
+		world.advanceTick();
 		world.remove(entity, Health);
 
 		expect(world.removed(Health)).toEqual([entity]);
+		expect(world.removedChanges(Health)).toEqual([{ entity, tick: 3 }]);
 
 		world.clearChanges();
 
 		expect(world.added(Health)).toEqual([]);
 		expect(world.changed(Health)).toEqual([]);
 		expect(world.removed(Health)).toEqual([]);
+	});
+
+	it("notifies component observers", () => {
+		const world = new World();
+		const entity = world.createEntity();
+		const calls: string[] = [];
+
+		const unsubscribeAdd = world.onAdd(Position, (addedEntity, position) => {
+			calls.push(`add:${addedEntity}:${position.x}`);
+		});
+		const unsubscribeChange = world.onChange(
+			Position,
+			(changedEntity, position) => {
+				calls.push(`change:${changedEntity}:${position.x}`);
+			},
+		);
+		const unsubscribeRemove = world.onRemove(Position, (removedEntity) => {
+			calls.push(`remove:${removedEntity}`);
+		});
+
+		world.set(entity, Position, { x: 1, y: 1 });
+		world.set(entity, Position, { x: 2, y: 2 });
+		world.remove(entity, Position);
+
+		unsubscribeAdd();
+		unsubscribeChange();
+		unsubscribeRemove();
+		world.set(entity, Position, { x: 3, y: 3 });
+
+		expect(calls).toEqual([
+			`add:${entity}:1`,
+			`change:${entity}:2`,
+			`remove:${entity}`,
+		]);
 	});
 
 	it("supports tags as zero-data components", () => {
@@ -421,6 +485,60 @@ describe("World", () => {
 
 		expect(world.hasResource(GameTime)).toBe(false);
 		expect(world.getResource(GameTime)).toBeUndefined();
+	});
+
+	it("snapshots and restores world state", () => {
+		const world = new World();
+		const tower = world.createEntity();
+		const enemy = world.createEntity();
+
+		world.advanceTick();
+		world.set(tower, Position, { x: 5, y: 9 });
+		world.set(enemy, Health, { current: 30, max: 50 });
+		world.setResource(GameTime, { elapsed: 12 });
+		world.setRelation(tower, Targeting, enemy, { priority: 7 });
+
+		const snapshot = world.snapshot();
+
+		world.set(tower, Position, { x: 99, y: 99 });
+		world.removeResource(GameTime);
+		world.removeRelation(tower, Targeting, enemy);
+		world.restore(snapshot);
+
+		expect(world.getTick()).toBe(1);
+		expect(world.get(tower, Position)).toEqual({ x: 5, y: 9 });
+		expect(world.get(enemy, Health)).toEqual({ current: 30, max: 50 });
+		expect(world.getResource(GameTime)).toEqual({ elapsed: 12 });
+		expect(world.getRelation(tower, Targeting, enemy)).toEqual({ priority: 7 });
+	});
+
+	it("returns debug inspection data for entities components resources and relations", () => {
+		const world = new World({ debug: true });
+		const tower = world.createEntity();
+		const enemy = world.createEntity();
+
+		world.set(tower, Position, { x: 0, y: 0 });
+		world.set(tower, Velocity, { x: 1, y: 1 });
+		world.set(enemy, Health, { current: 10, max: 10 });
+		world.setResource(GameTime, { elapsed: 1 });
+		world.setRelation(tower, Targeting, enemy, { priority: 1 });
+
+		const info = world.inspect();
+
+		expect(world.isDebugEnabled()).toBe(true);
+		expect(info.aliveEntities).toBe(2);
+		expect(info.components.map((component) => component.id).sort()).toEqual([
+			"Health",
+			"Position",
+			"Velocity",
+		]);
+		expect(info.resources).toEqual(["GameTime"]);
+		expect(info.relations).toEqual([{ id: "Targeting", edges: 1 }]);
+		expect(
+			info.archetypes.some(
+				(archetype) => archetype.key === "Position|Velocity",
+			),
+		).toBe(true);
 	});
 
 	it("throws when updating a missing resource", () => {
@@ -606,6 +724,31 @@ describe("World", () => {
 		scheduler.run(world);
 
 		expect(calls).toEqual(["prepare", "spawn", "move", "damage", "cleanup"]);
+	});
+
+	it("runs scheduler lifecycle hooks and deterministic fixed steps", () => {
+		const world = new World();
+		const calls: string[] = [];
+		const scheduler = new Scheduler().withFixedStep(0.25).add(
+			defineSystem("sim", () => calls.push("run"), {
+				onStart: () => calls.push("start"),
+				onFixedUpdate: (_world, deltaTime) => {
+					calls.push(`fixed:${deltaTime}`);
+				},
+				onStop: () => calls.push("stop"),
+			}),
+		);
+
+		scheduler.run(world);
+
+		expect(scheduler.fixedUpdate(world, 0.1)).toBe(0);
+		expect(scheduler.fixedUpdate(world, 0.4)).toBe(2);
+		expect(world.getTick()).toBe(2);
+
+		scheduler.stop(world);
+
+		expect(calls).toEqual(["start", "run", "fixed:0.25", "fixed:0.25", "stop"]);
+		expect(scheduler.inspect()[0]?.runs).toBe(3);
 	});
 
 	it("throws when scheduler dependencies form a cycle", () => {

@@ -1,5 +1,10 @@
 import { CommandBuffer } from "./command-buffer";
+import { Query } from "./query";
 import type {
+	ComponentAddObserver,
+	ComponentChange,
+	ComponentChangeObserver,
+	ComponentRemoveObserver,
 	ComponentType,
 	Entity,
 	EntityHandle,
@@ -10,7 +15,12 @@ import type {
 	Relation,
 	RelationEntry,
 	Resource,
+	SnapshotComponent,
+	SnapshotEntity,
 	Tag,
+	WorldDebugInfo,
+	WorldOptions,
+	WorldSnapshot,
 } from "./types";
 
 interface MutableEntityRecord {
@@ -28,21 +38,38 @@ interface ComponentStore {
 	values: Map<Entity, unknown>;
 }
 
+interface ArchetypeStore {
+	entities: Entity[];
+	entityToIndex: Map<Entity, number>;
+}
+
+interface ComponentObservers {
+	add: ((entity: Entity, value: unknown, world: World) => void)[];
+	change: ((entity: Entity, value: unknown, world: World) => void)[];
+	remove: ((entity: Entity, world: World) => void)[];
+}
+
 export class World {
 	// Entity ids only move forward for now; this keeps stale-id behavior easy to reason about.
 	private nextEntityId = 1;
+	private tick = 0;
+	private debugEnabled: boolean;
 	// Entity records answer: "does this id exist, is it alive, and what generation is it?"
 	private readonly records = new Map<Entity, MutableEntityRecord>();
 	// Component id -> sparse-set component store.
 	private readonly components = new Map<string, ComponentStore>();
-	// Entity id -> sorted component ids. This is the lightweight archetype index.
+	// Entity id -> sorted component ids.
 	private readonly entityComponents = new Map<Entity, string[]>();
+	// Archetype key -> entities with exactly that component set.
+	private readonly archetypes = new Map<string, ArchetypeStore>();
+	private readonly entityArchetypeKeys = new Map<Entity, string>();
 	// Cached query results are invalidated whenever component membership changes.
 	private readonly queryCache = new Map<string, Entity[]>();
 	// Change maps are intentionally frame-like: call clearChanges after systems observe them.
-	private readonly addedComponents = new Map<string, Entity[]>();
-	private readonly changedComponents = new Map<string, Entity[]>();
-	private readonly removedComponents = new Map<string, Entity[]>();
+	private readonly addedComponents = new Map<string, ComponentChange[]>();
+	private readonly changedComponents = new Map<string, ComponentChange[]>();
+	private readonly removedComponents = new Map<string, ComponentChange[]>();
+	private readonly componentObservers = new Map<string, ComponentObservers>();
 	// Resource id -> singleton resource value.
 	private readonly resources = new Map<string, unknown>();
 	// Event id -> listener list.
@@ -53,6 +80,10 @@ export class World {
 		Map<Entity, Map<Entity, unknown>>
 	>();
 
+	public constructor(options: WorldOptions = {}) {
+		this.debugEnabled = options.debug === true;
+	}
+
 	public createEntity(): Entity {
 		const entity = this.nextEntityId++;
 
@@ -60,6 +91,8 @@ export class World {
 			alive: true,
 			generation: 0,
 		});
+		this.entityComponents.set(entity, []);
+		this.moveEntityToArchetype(entity, "");
 
 		return entity;
 	}
@@ -118,6 +151,23 @@ export class World {
 		return this.records.get(entity)?.alive === true;
 	}
 
+	public getTick(): number {
+		return this.tick;
+	}
+
+	public advanceTick(): number {
+		this.tick++;
+		return this.tick;
+	}
+
+	public setDebugEnabled(enabled: boolean): void {
+		this.debugEnabled = enabled;
+	}
+
+	public isDebugEnabled(): boolean {
+		return this.debugEnabled;
+	}
+
 	public deleteEntity(entity: Entity): void {
 		const record = this.records.get(entity);
 
@@ -132,7 +182,9 @@ export class World {
 			this.removeFromComponentStore(componentStore, entity, componentId);
 		});
 
+		this.removeEntityFromArchetype(entity);
 		this.entityComponents.delete(entity);
+		this.entityArchetypeKeys.delete(entity);
 		this.invalidateQueryCache();
 
 		this.relations.forEach((relationStore) => {
@@ -153,11 +205,10 @@ export class World {
 		componentType: ComponentType<T>,
 		component: T,
 	): void {
-		if (!this.isAlive(entity)) {
-			error(
-				`Cannot set component "${componentType.id}" on dead entity: ${entity}`,
-			);
-		}
+		this.assertAlive(
+			entity,
+			`Cannot set component "${componentType.id}" on dead entity: ${entity}`,
+		);
 
 		const componentStore = this.getOrCreateComponentStore(componentType);
 		const hadComponent = componentStore.values.has(entity);
@@ -167,9 +218,11 @@ export class World {
 			componentStore.entities.push(entity);
 			this.addToArchetype(entity, componentType.id);
 			this.recordComponentAdded(componentType.id, entity);
+			this.notifyComponentAdded(componentType.id, entity, component);
 			this.invalidateQueryCache();
 		} else {
 			this.recordComponentChanged(componentType.id, entity);
+			this.notifyComponentChanged(componentType.id, entity, component);
 		}
 
 		componentStore.values.set(entity, component);
@@ -277,6 +330,10 @@ export class World {
 			return this.getLivingEntities();
 		}
 
+		if (componentTypes.size() > 1) {
+			return this.queryArchetypes(componentTypes);
+		}
+
 		let smallestStore: ComponentStore | undefined;
 
 		for (const componentType of componentTypes) {
@@ -334,6 +391,12 @@ export class World {
 		return entities;
 	}
 
+	public queryObject<T extends readonly ComponentType<unknown>[]>(
+		componentTypes: T,
+	): Query<T> {
+		return new Query(this, componentTypes);
+	}
+
 	public queryEach<T extends readonly ComponentType<unknown>[]>(
 		componentTypes: T,
 		callback: (entity: Entity, ...components: QueryData<T>) => void,
@@ -362,14 +425,26 @@ export class World {
 	}
 
 	public added<T>(componentType: ComponentType<T>): Entity[] {
-		return [...(this.addedComponents.get(componentType.id) ?? [])];
+		return this.getChangedEntities(this.addedComponents, componentType.id);
 	}
 
 	public changed<T>(componentType: ComponentType<T>): Entity[] {
-		return [...(this.changedComponents.get(componentType.id) ?? [])];
+		return this.getChangedEntities(this.changedComponents, componentType.id);
 	}
 
 	public removed<T>(componentType: ComponentType<T>): Entity[] {
+		return this.getChangedEntities(this.removedComponents, componentType.id);
+	}
+
+	public addedChanges<T>(componentType: ComponentType<T>): ComponentChange[] {
+		return [...(this.addedComponents.get(componentType.id) ?? [])];
+	}
+
+	public changedChanges<T>(componentType: ComponentType<T>): ComponentChange[] {
+		return [...(this.changedComponents.get(componentType.id) ?? [])];
+	}
+
+	public removedChanges<T>(componentType: ComponentType<T>): ComponentChange[] {
 		return [...(this.removedComponents.get(componentType.id) ?? [])];
 	}
 
@@ -381,6 +456,47 @@ export class World {
 
 	public commands(): CommandBuffer {
 		return new CommandBuffer();
+	}
+
+	public onAdd<T>(
+		componentType: ComponentType<T>,
+		observer: ComponentAddObserver<T>,
+	): () => void {
+		const observers = this.getOrCreateComponentObservers(componentType.id);
+		const wrappedObserver = observer as (
+			entity: Entity,
+			value: unknown,
+			world: World,
+		) => void;
+
+		observers.add.push(wrappedObserver);
+		return () => this.removeObserver(observers.add, wrappedObserver);
+	}
+
+	public onChange<T>(
+		componentType: ComponentType<T>,
+		observer: ComponentChangeObserver<T>,
+	): () => void {
+		const observers = this.getOrCreateComponentObservers(componentType.id);
+		const wrappedObserver = observer as (
+			entity: Entity,
+			value: unknown,
+			world: World,
+		) => void;
+
+		observers.change.push(wrappedObserver);
+		return () => this.removeObserver(observers.change, wrappedObserver);
+	}
+
+	public onRemove<T>(
+		componentType: ComponentType<T>,
+		observer: ComponentRemoveObserver<T>,
+	): () => void {
+		const observers = this.getOrCreateComponentObservers(componentType.id);
+		const wrappedObserver = observer as (entity: Entity, world: World) => void;
+
+		observers.remove.push(wrappedObserver);
+		return () => this.removeObserver(observers.remove, wrappedObserver);
 	}
 
 	public setResource<T>(resource: Resource<T>, value: T): void {
@@ -409,6 +525,146 @@ export class World {
 
 	public removeResource<T>(resource: Resource<T>): void {
 		this.resources.delete(resource.id);
+	}
+
+	public snapshot(): WorldSnapshot {
+		const entities: SnapshotEntity[] = [];
+		const resources: { id: string; value: unknown }[] = [];
+		const relations: {
+			id: string;
+			source: Entity;
+			target: Entity;
+			value: unknown;
+		}[] = [];
+
+		this.records.forEach((record, entity) => {
+			entities.push({
+				id: entity,
+				alive: record.alive,
+				generation: record.generation,
+				components: this.snapshotComponents(entity),
+			});
+		});
+
+		this.resources.forEach((value, id) => {
+			resources.push({ id, value });
+		});
+
+		this.relations.forEach((sourceStore, id) => {
+			sourceStore.forEach((targetStore, source) => {
+				targetStore.forEach((value, target) => {
+					relations.push({ id, source, target, value });
+				});
+			});
+		});
+
+		return {
+			tick: this.tick,
+			nextEntityId: this.nextEntityId,
+			entities,
+			resources,
+			relations,
+		};
+	}
+
+	public restore(snapshot: WorldSnapshot): void {
+		this.nextEntityId = snapshot.nextEntityId;
+		this.tick = snapshot.tick;
+		this.records.clear();
+		this.components.clear();
+		this.entityComponents.clear();
+		this.archetypes.clear();
+		this.entityArchetypeKeys.clear();
+		this.queryCache.clear();
+		this.resources.clear();
+		this.relations.clear();
+		this.clearChanges();
+
+		for (const entity of snapshot.entities) {
+			this.records.set(entity.id, {
+				alive: entity.alive,
+				generation: entity.generation,
+			});
+			this.entityComponents.set(entity.id, []);
+			this.moveEntityToArchetype(entity.id, "");
+
+			for (const component of entity.components) {
+				this.restoreComponent(entity.id, component);
+			}
+
+			if (!entity.alive) {
+				this.removeEntityFromArchetype(entity.id);
+			}
+		}
+
+		for (const resource of snapshot.resources) {
+			this.resources.set(resource.id, resource.value);
+		}
+
+		for (const relation of snapshot.relations) {
+			let sourceStore = this.relations.get(relation.id);
+
+			if (sourceStore === undefined) {
+				sourceStore = new Map<Entity, Map<Entity, unknown>>();
+				this.relations.set(relation.id, sourceStore);
+			}
+
+			let targetStore = sourceStore.get(relation.source);
+
+			if (targetStore === undefined) {
+				targetStore = new Map<Entity, unknown>();
+				sourceStore.set(relation.source, targetStore);
+			}
+
+			targetStore.set(relation.target, relation.value);
+		}
+	}
+
+	public inspect(): WorldDebugInfo {
+		const components: { id: string; entities: number }[] = [];
+		const archetypes: {
+			key: string;
+			components: string[];
+			entities: number;
+		}[] = [];
+		const resources: string[] = [];
+		const relations: { id: string; edges: number }[] = [];
+
+		this.components.forEach((componentStore, id) => {
+			components.push({ id, entities: componentStore.entities.size() });
+		});
+
+		this.archetypes.forEach((archetypeStore, key) => {
+			archetypes.push({
+				key,
+				components: this.getComponentIdsFromKey(key),
+				entities: archetypeStore.entities.size(),
+			});
+		});
+
+		this.resources.forEach((_value, id) => {
+			resources.push(id);
+		});
+
+		this.relations.forEach((sourceStore, id) => {
+			let edges = 0;
+
+			sourceStore.forEach((targetStore) => {
+				edges += targetStore.size();
+			});
+
+			relations.push({ id, edges });
+		});
+
+		return {
+			tick: this.tick,
+			entities: this.records.size(),
+			aliveEntities: this.getLivingEntities().size(),
+			components,
+			archetypes,
+			resources,
+			relations,
+		};
 	}
 
 	public on<T>(
@@ -680,11 +936,13 @@ export class World {
 		componentStore.values.delete(entity);
 		this.removeFromArchetype(entity, componentId);
 		this.recordComponentRemoved(componentId, entity);
+		this.notifyComponentRemoved(componentId, entity);
 		this.invalidateQueryCache();
 	}
 
 	private addToArchetype(entity: Entity, componentId: string): void {
 		let componentIds = this.entityComponents.get(entity);
+		const previousKey = this.entityArchetypeKeys.get(entity) ?? "";
 
 		if (componentIds === undefined) {
 			componentIds = [];
@@ -694,11 +952,17 @@ export class World {
 		if (componentIds.indexOf(componentId) < 0) {
 			componentIds.push(componentId);
 			componentIds.sort();
+			this.moveEntityBetweenArchetypes(
+				entity,
+				previousKey,
+				this.getArchetypeKeyFromIds(componentIds),
+			);
 		}
 	}
 
 	private removeFromArchetype(entity: Entity, componentId: string): void {
 		const componentIds = this.entityComponents.get(entity);
+		const previousKey = this.entityArchetypeKeys.get(entity) ?? "";
 
 		if (componentIds === undefined) {
 			return;
@@ -711,8 +975,15 @@ export class World {
 		}
 
 		if (componentIds.size() === 0) {
-			this.entityComponents.delete(entity);
+			this.moveEntityBetweenArchetypes(entity, previousKey, "");
+			return;
 		}
+
+		this.moveEntityBetweenArchetypes(
+			entity,
+			previousKey,
+			this.getArchetypeKeyFromIds(componentIds),
+		);
 	}
 
 	private invalidateQueryCache(): void {
@@ -732,6 +1003,119 @@ export class World {
 		return componentIds.join("|");
 	}
 
+	private queryArchetypes(
+		componentTypes: readonly ComponentType<unknown>[],
+	): Entity[] {
+		const entities: Entity[] = [];
+
+		this.archetypes.forEach((archetypeStore, archetypeKey) => {
+			if (!this.archetypeMatches(archetypeKey, componentTypes)) {
+				return;
+			}
+
+			for (const entity of archetypeStore.entities) {
+				if (this.isAlive(entity)) {
+					entities.push(entity);
+				}
+			}
+		});
+
+		return entities;
+	}
+
+	private archetypeMatches(
+		archetypeKey: string,
+		componentTypes: readonly ComponentType<unknown>[],
+	): boolean {
+		const componentIds = this.getComponentIdsFromKey(archetypeKey);
+
+		for (const componentType of componentTypes) {
+			if (componentIds.indexOf(componentType.id) < 0) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	private moveEntityToArchetype(entity: Entity, archetypeKey: string): void {
+		this.entityArchetypeKeys.set(entity, archetypeKey);
+		let archetypeStore = this.archetypes.get(archetypeKey);
+
+		if (archetypeStore === undefined) {
+			archetypeStore = {
+				entities: [],
+				entityToIndex: new Map<Entity, number>(),
+			};
+			this.archetypes.set(archetypeKey, archetypeStore);
+		}
+
+		if (!archetypeStore.entityToIndex.has(entity)) {
+			archetypeStore.entityToIndex.set(entity, archetypeStore.entities.size());
+			archetypeStore.entities.push(entity);
+		}
+	}
+
+	private moveEntityBetweenArchetypes(
+		entity: Entity,
+		previousKey: string,
+		nextKey: string,
+	): void {
+		if (previousKey === nextKey) {
+			return;
+		}
+
+		this.removeEntityFromArchetype(entity);
+		this.moveEntityToArchetype(entity, nextKey);
+	}
+
+	private removeEntityFromArchetype(entity: Entity): void {
+		const archetypeKey = this.entityArchetypeKeys.get(entity);
+
+		if (archetypeKey === undefined) {
+			return;
+		}
+
+		const archetypeStore = this.archetypes.get(archetypeKey);
+
+		if (archetypeStore !== undefined) {
+			const removedIndex = archetypeStore.entityToIndex.get(entity);
+
+			if (removedIndex !== undefined) {
+				const lastIndex = archetypeStore.entities.size() - 1;
+				const lastEntity = archetypeStore.entities[lastIndex];
+
+				if (removedIndex !== lastIndex && lastEntity !== undefined) {
+					archetypeStore.entities[removedIndex] = lastEntity;
+					archetypeStore.entityToIndex.set(lastEntity, removedIndex);
+				}
+
+				archetypeStore.entities.remove(lastIndex);
+				archetypeStore.entityToIndex.delete(entity);
+			}
+
+			if (archetypeStore.entities.size() === 0) {
+				this.archetypes.delete(archetypeKey);
+			}
+		}
+
+		this.entityArchetypeKeys.delete(entity);
+	}
+
+	private getArchetypeKeyFromIds(componentIds: readonly string[]): string {
+		const sortedIds = [...componentIds];
+		sortedIds.sort();
+		return sortedIds.join("|");
+	}
+
+	private getComponentIdsFromKey(archetypeKey: string): string[] {
+		if (archetypeKey === "") {
+			return [];
+		}
+
+		return archetypeKey.split("|");
+	}
+
 	private recordComponentAdded(componentId: string, entity: Entity): void {
 		this.pushUnique(this.addedComponents, componentId, entity);
 	}
@@ -745,19 +1129,123 @@ export class World {
 	}
 
 	private pushUnique(
-		componentMap: Map<string, Entity[]>,
+		componentMap: Map<string, ComponentChange[]>,
 		componentId: string,
 		entity: Entity,
 	): void {
-		let entities = componentMap.get(componentId);
+		let changes = componentMap.get(componentId);
 
-		if (entities === undefined) {
-			entities = [];
-			componentMap.set(componentId, entities);
+		if (changes === undefined) {
+			changes = [];
+			componentMap.set(componentId, changes);
 		}
 
-		if (entities.indexOf(entity) < 0) {
-			entities.push(entity);
+		for (const change of changes) {
+			if (change.entity === entity) {
+				return;
+			}
+		}
+
+		changes.push({ entity, tick: this.tick });
+	}
+
+	private getChangedEntities(
+		componentMap: Map<string, ComponentChange[]>,
+		componentId: string,
+	): Entity[] {
+		const entities: Entity[] = [];
+
+		for (const change of componentMap.get(componentId) ?? []) {
+			entities.push(change.entity);
+		}
+
+		return entities;
+	}
+
+	private getOrCreateComponentObservers(
+		componentId: string,
+	): ComponentObservers {
+		let observers = this.componentObservers.get(componentId);
+
+		if (observers === undefined) {
+			observers = {
+				add: [],
+				change: [],
+				remove: [],
+			};
+			this.componentObservers.set(componentId, observers);
+		}
+
+		return observers;
+	}
+
+	private removeObserver(observers: defined[], observer: defined): void {
+		const index = observers.indexOf(observer);
+
+		if (index >= 0) {
+			observers.remove(index);
+		}
+	}
+
+	private notifyComponentAdded(
+		componentId: string,
+		entity: Entity,
+		value: unknown,
+	): void {
+		for (const observer of this.componentObservers.get(componentId)?.add ??
+			[]) {
+			observer(entity, value, this);
+		}
+	}
+
+	private notifyComponentChanged(
+		componentId: string,
+		entity: Entity,
+		value: unknown,
+	): void {
+		for (const observer of this.componentObservers.get(componentId)?.change ??
+			[]) {
+			observer(entity, value, this);
+		}
+	}
+
+	private notifyComponentRemoved(componentId: string, entity: Entity): void {
+		for (const observer of this.componentObservers.get(componentId)?.remove ??
+			[]) {
+			observer(entity, this);
+		}
+	}
+
+	private snapshotComponents(entity: Entity): SnapshotComponent[] {
+		const components: SnapshotComponent[] = [];
+
+		this.components.forEach((componentStore, id) => {
+			if (componentStore.values.has(entity)) {
+				components.push({
+					id,
+					value: componentStore.values.get(entity),
+				});
+			}
+		});
+
+		return components;
+	}
+
+	private restoreComponent(entity: Entity, component: SnapshotComponent): void {
+		const componentStore = this.getOrCreateComponentStore({ id: component.id });
+
+		if (!componentStore.values.has(entity)) {
+			componentStore.entityToIndex.set(entity, componentStore.entities.size());
+			componentStore.entities.push(entity);
+			this.addToArchetype(entity, component.id);
+		}
+
+		componentStore.values.set(entity, component.value);
+	}
+
+	private assertAlive(entity: Entity, message: string): void {
+		if (!this.isAlive(entity)) {
+			error(message);
 		}
 	}
 
