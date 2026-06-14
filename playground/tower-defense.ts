@@ -5,6 +5,7 @@ import {
 	defineResource,
 	defineSystem,
 	Scheduler,
+	type SystemTiming,
 	World,
 } from "../src";
 
@@ -60,13 +61,19 @@ interface GameState {
 	finished: boolean;
 }
 
-const Position = defineComponent<Position>("Position");
-const Enemy = defineComponent<EnemyData>("Enemy");
-const Health = defineComponent<Health>("Health");
-const Tower = defineComponent<TowerData>("Tower");
-const Shot = defineComponent<ShotData>("Shot");
-const Game = defineResource<GameState>("Game");
-const Targeting = defineRelation<{ acquiredAt: number }>("Targeting");
+export interface SimulationResult {
+	frames: string[];
+	game: GameState;
+	timings: SystemTiming[];
+}
+
+export const Position = defineComponent<Position>("Position");
+export const Enemy = defineComponent<EnemyData>("Enemy");
+export const Health = defineComponent<Health>("Health");
+export const Tower = defineComponent<TowerData>("Tower");
+export const Shot = defineComponent<ShotData>("Shot");
+export const Game = defineResource<GameState>("Game");
+export const Targeting = defineRelation<{ acquiredAt: number }>("Targeting");
 
 const MapWidth = 72;
 const MapHeight = 15;
@@ -75,6 +82,7 @@ const PathStart = 0;
 const BaseX = MapWidth - 2;
 const FixedStep = 0.1;
 const RenderEveryFrames = 20;
+const MaxFrames = 700;
 
 const Waves: WaveData[] = [
 	{ count: 10, health: 45, speed: 7.2, reward: 10, spawnInterval: 0.65 },
@@ -82,7 +90,7 @@ const Waves: WaveData[] = [
 	{ count: 18, health: 105, speed: 9.2, reward: 16, spawnInterval: 0.48 },
 ];
 
-function setupWorld(): World {
+export function setupWorld(): World {
 	const world = new World();
 
 	world.setResource(Game, {
@@ -173,7 +181,7 @@ function distanceSquared(a: Position, b: Position): number {
 	return dx * dx + dy * dy;
 }
 
-function createScheduler(): Scheduler {
+export function createScheduler(): Scheduler {
 	return new Scheduler()
 		.withFixedStep(FixedStep)
 		.phase("spawn")
@@ -343,7 +351,7 @@ function createScheduler(): Scheduler {
 		);
 }
 
-function render(world: World): string {
+export function render(world: World): string {
 	const grid: string[][] = [];
 
 	for (let y = 0; y < MapHeight; y++) {
@@ -451,7 +459,7 @@ function shouldStop(world: World): boolean {
 	return game.lives <= 0 || game.finished;
 }
 
-function run(): void {
+export function simulateTowerDefense(): SimulationResult {
 	const world = setupWorld();
 	const scheduler = createScheduler();
 	const frames: string[] = [];
@@ -459,7 +467,7 @@ function run(): void {
 	frames.push("MSRECS tower defense playground");
 	frames.push(render(world));
 
-	for (let frame = 0; frame < 420; frame++) {
+	for (let frame = 0; frame < MaxFrames; frame++) {
 		if (shouldStop(world)) {
 			break;
 		}
@@ -472,11 +480,29 @@ function run(): void {
 	}
 
 	frames.push(render(world));
-	frames.push(
-		`system timings: ${JSON.stringify(scheduler.inspect(), undefined, 2)}`,
-	);
+	const game = world.getResource(Game);
 
-	console.log(frames.join("\n\n"));
+	if (game === undefined) {
+		error("Missing game state after simulation.");
+	}
+
+	return {
+		frames,
+		game: { ...game },
+		timings: scheduler.inspect(),
+	};
 }
 
-run();
+function run(): void {
+	const result = simulateTowerDefense();
+
+	result.frames.push(
+		`system timings: ${JSON.stringify(result.timings, undefined, 2)}`,
+	);
+
+	console.log(result.frames.join("\n\n"));
+}
+
+if (import.meta.main) {
+	run();
+}

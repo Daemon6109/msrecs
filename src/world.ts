@@ -28,10 +28,6 @@ interface MutableEntityRecord {
 	generation: number;
 }
 
-// A component store is a sparse set:
-// - values stores the actual component data by entity id.
-// - entities is a dense list of entities that currently have this component.
-// - entityToIndex lets us remove an entity from entities in O(1) by swap-removing.
 interface ComponentStore {
 	entities: Entity[];
 	entityToIndex: Map<Entity, number>;
@@ -51,22 +47,15 @@ interface ComponentObservers {
 }
 
 export class World {
-	// Entity ids only move forward for now; this keeps stale-id behavior easy to reason about.
 	private nextEntityId = 1;
 	private tick = 0;
 	private debugEnabled: boolean;
-	// Entity records answer: "does this id exist, is it alive, and what generation is it?"
 	private readonly records = new Map<Entity, MutableEntityRecord>();
-	// Component id -> sparse-set component store.
 	private readonly components = new Map<string, ComponentStore>();
-	// Entity id -> sorted component ids.
 	private readonly entityComponents = new Map<Entity, string[]>();
-	// Archetype key -> entities with exactly that component set.
 	private readonly archetypes = new Map<string, ArchetypeStore>();
 	private readonly entityArchetypeKeys = new Map<Entity, string>();
-	// Cached query results are invalidated whenever component membership changes.
 	private readonly queryCache = new Map<string, Entity[]>();
-	// Change maps are intentionally frame-like: call clearChanges after systems observe them.
 	private readonly addedComponents = new Map<
 		string,
 		Map<Entity, ComponentChange>
@@ -80,11 +69,8 @@ export class World {
 		Map<Entity, ComponentChange>
 	>();
 	private readonly componentObservers = new Map<string, ComponentObservers>();
-	// Resource id -> singleton resource value.
 	private readonly resources = new Map<string, unknown>();
-	// Event id -> listener list.
 	private readonly events = new Map<string, EventListener<unknown>[]>();
-	// Relation id -> source entity -> target entity -> relation payload.
 	private readonly relations = new Map<
 		string,
 		Map<Entity, Map<Entity, unknown>>
@@ -919,14 +905,12 @@ export class World {
 		entity: Entity,
 		componentId: string,
 	): void {
-		// If the entity is not in the sparse set, there is nothing to remove.
 		const removedIndex = componentStore.entityToIndex.get(entity);
 
 		if (removedIndex === undefined) {
 			return;
 		}
 
-		// Swap the final dense entity into the removed slot, then trim the end.
 		const lastIndex = componentStore.entities.size() - 1;
 		const lastEntity = componentStore.entities[lastIndex];
 
