@@ -34,11 +34,6 @@
 		"noPropertyAccessFromIndexSignature": false,
 		"allowUnusedLabels": false,
 		"allowUnreachableCode": false,
-		"plugins": [
-			{
-				"transform": "rbxts-transformer-jest"
-			}
-		]
 	},
-	"include": ["src"]
+	"include": ["src"],
 }
