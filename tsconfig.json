@@ -33,7 +33,7 @@
 		"noImplicitOverride": true,
 		"noPropertyAccessFromIndexSignature": false,
 		"allowUnusedLabels": false,
-		"allowUnreachableCode": false,
+		"allowUnreachableCode": false
 	},
-	"include": ["src"],
+	"include": ["src"]
 }

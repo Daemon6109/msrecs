@@ -31,6 +31,6 @@
 		"lua",
 		"luau"
 	],
-	"words": [],
+	"words": ["isentinel", "msrecs", "Radulovich", "rbxts", "rbxtsc"],
 	"ignoreWords": []
 }

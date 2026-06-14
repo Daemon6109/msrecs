@@ -16,8 +16,6 @@
         "@types/bun": "latest",
         "cspell": "latest",
         "rbxts-transformer-jest": "^0.0.6",
-      },
-      "peerDependencies": {
         "roblox-ts": "^3.0.0",
         "typescript": "=5.5.3",
       },

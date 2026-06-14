@@ -9,7 +9,7 @@ export interface Component<T> {
 	readonly _type?: T;
 }
 
-export type ComponentType<T> = string | Component<T>;
+export type ComponentType<T> = Component<T>;
 
 interface EntityRecord {
 	alive: boolean;
@@ -84,7 +84,9 @@ export class World {
 			return undefined;
 		}
 
-		return this.components.get(this.getComponentId(componentType))?.get(entity) as T | undefined;
+		return this.components
+			.get(this.getComponentId(componentType))
+			?.get(entity) as T | undefined;
 	}
 
 	public removeComponent<T>(
@@ -101,7 +103,10 @@ export class World {
 		if (!this.isAlive(entity)) {
 			return false;
 		}
-		return this.components.get(this.getComponentId(componentType))?.has(entity) === true;
+		return (
+			this.components.get(this.getComponentId(componentType))?.has(entity) ===
+			true
+		);
 	}
 
 	public query(...componentTypes: ComponentType<unknown>[]): Entity[] {
@@ -125,10 +130,6 @@ export class World {
 	}
 
 	private getComponentId<T>(componentType: ComponentType<T>): string {
-		if (typeOf(componentType) === "string") {
-			return componentType as string;
-		}
-
 		return componentType.id;
 	}
 }
