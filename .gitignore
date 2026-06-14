@@ -6,6 +6,7 @@ include
 out
 dist
 *.tgz
+*.rbxl
 
 # code coverage
 coverage

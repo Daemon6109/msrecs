@@ -25,5 +25,11 @@
 	"peerDependencies": {
 		"typescript": "=5.5.3",
 		"roblox-ts": "^3.0.0"
+	},
+	"scripts": {
+		"compile": "rbxtsc --type package",
+		"compile:testing": "rbxtsc --type game",
+		"build": "rojo build test.project.json -o test.rbxl",
+		"test": "jest-roblox"
 	}
 }
