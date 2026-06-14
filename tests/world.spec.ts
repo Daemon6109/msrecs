@@ -96,6 +96,20 @@ describe("World", () => {
 		});
 	});
 
+	it("supports generation-safe entity handles", () => {
+		const world = new World();
+		const handle = world.createEntityHandle();
+
+		expect(world.isHandleAlive(handle)).toBe(true);
+		expect(world.resolveEntity(handle)).toBe(handle.id);
+
+		world.deleteEntityHandle(handle);
+
+		expect(world.isHandleAlive(handle)).toBe(false);
+		expect(world.resolveEntity(handle)).toBeUndefined();
+		expect(world.getEntityRecord(handle.id)?.generation).toBe(1);
+	});
+
 	it("does nothing when deleting an unknown entity", () => {
 		const world = new World();
 
@@ -311,6 +325,71 @@ describe("World", () => {
 		expect(world.get(deleted, Position)).toBeUndefined();
 	});
 
+	it("caches query results and invalidates when component membership changes", () => {
+		const world = new World();
+		const first = world.createEntity();
+		const second = world.createEntity();
+
+		world.set(first, Position, { x: 1, y: 1 });
+
+		const cached = world.queryCached(Position);
+		cached.push(999);
+
+		expect(world.queryCached(Position)).toEqual([first]);
+
+		world.set(second, Position, { x: 2, y: 2 });
+
+		expect(world.queryCached(Position).sort()).toEqual([first, second].sort());
+
+		world.remove(first, Position);
+
+		expect(world.queryCached(Position)).toEqual([second]);
+	});
+
+	it("tracks entity archetypes as sorted component ids", () => {
+		const world = new World();
+		const entity = world.createEntity();
+
+		world.set(entity, Velocity, { x: 0, y: 1 });
+		world.set(entity, Position, { x: 4, y: 8 });
+
+		expect(world.getArchetype(entity)).toEqual(["Position", "Velocity"]);
+		expect(world.getArchetypeKey(entity)).toBe("Position|Velocity");
+
+		world.remove(entity, Position);
+
+		expect(world.getArchetype(entity)).toEqual(["Velocity"]);
+
+		world.deleteEntity(entity);
+
+		expect(world.getArchetype(entity)).toEqual([]);
+	});
+
+	it("tracks added changed and removed components until cleared", () => {
+		const world = new World();
+		const entity = world.createEntity();
+
+		world.set(entity, Health, { current: 10, max: 100 });
+
+		expect(world.added(Health)).toEqual([entity]);
+		expect(world.changed(Health)).toEqual([]);
+		expect(world.removed(Health)).toEqual([]);
+
+		world.set(entity, Health, { current: 20, max: 100 });
+
+		expect(world.changed(Health)).toEqual([entity]);
+
+		world.remove(entity, Health);
+
+		expect(world.removed(Health)).toEqual([entity]);
+
+		world.clearChanges();
+
+		expect(world.added(Health)).toEqual([]);
+		expect(world.changed(Health)).toEqual([]);
+		expect(world.removed(Health)).toEqual([]);
+	});
+
 	it("supports tags as zero-data components", () => {
 		const world = new World();
 		const enemy = world.createEntity();
@@ -379,6 +458,25 @@ describe("World", () => {
 		});
 		expect(world.relationTargets(tower, Targeting)).toEqual([enemy]);
 		expect(world.relationSources(Targeting, enemy)).toEqual([tower]);
+	});
+
+	it("queries relation entries and relation aliases", () => {
+		const world = new World();
+		const firstTower = world.createEntity();
+		const secondTower = world.createEntity();
+		const enemy = world.createEntity();
+
+		world.setRelation(firstTower, Targeting, enemy, { priority: 10 });
+		world.setRelation(secondTower, Targeting, enemy, { priority: 5 });
+
+		expect(world.targetsOf(firstTower, Targeting)).toEqual([enemy]);
+		expect(world.sourcesOf(Targeting, enemy).sort()).toEqual(
+			[firstTower, secondTower].sort(),
+		);
+		expect(world.queryRelation(Targeting, enemy)).toEqual([
+			{ source: firstTower, target: enemy, value: { priority: 10 } },
+			{ source: secondTower, target: enemy, value: { priority: 5 } },
+		]);
 	});
 
 	it("supports true-valued relation pairs", () => {
@@ -463,6 +561,87 @@ describe("World", () => {
 		scheduler.run(world);
 
 		expect(calls).toEqual(["first", "second"]);
+	});
+
+	it("runs scheduler systems by phase and dependency hints", () => {
+		const world = new World();
+		const calls: string[] = [];
+		const scheduler = new Scheduler()
+			.phase("prepare")
+			.phase("simulate")
+			.phase("cleanup")
+			.add(
+				defineSystem("move", () => calls.push("move")),
+				{
+					phase: "simulate",
+					after: ["spawn"],
+				},
+			)
+			.add(
+				defineSystem("cleanup", () => calls.push("cleanup")),
+				{
+					phase: "cleanup",
+				},
+			)
+			.add(
+				defineSystem("spawn", () => calls.push("spawn")),
+				{
+					phase: "simulate",
+					before: ["damage"],
+				},
+			)
+			.add(
+				defineSystem("damage", () => calls.push("damage")),
+				{
+					phase: "simulate",
+				},
+			)
+			.add(
+				defineSystem("prepare", () => calls.push("prepare")),
+				{
+					phase: "prepare",
+				},
+			);
+
+		scheduler.run(world);
+
+		expect(calls).toEqual(["prepare", "spawn", "move", "damage", "cleanup"]);
+	});
+
+	it("throws when scheduler dependencies form a cycle", () => {
+		const world = new World();
+		const scheduler = new Scheduler()
+			.add(defineSystem("first", () => undefined, { after: ["second"] }))
+			.add(defineSystem("second", () => undefined, { after: ["first"] }));
+
+		expect(() => scheduler.run(world)).toThrow();
+	});
+
+	it("buffers commands until flushed", () => {
+		const world = new World();
+		const events: number[] = [];
+		let spawned = 0;
+
+		world.on(EnemyKilled, (event) => events.push(event.enemy));
+
+		const commands = world
+			.commands()
+			.spawn((entity) => {
+				spawned = entity;
+				world.set(entity, Position, { x: 1, y: 2 });
+			})
+			.setResource(GameTime, { elapsed: 9 })
+			.emit(EnemyKilled, { enemy: 55, killer: 1 });
+
+		expect(world.query(Position)).toEqual([]);
+		expect(world.getResource(GameTime)).toBeUndefined();
+		expect(events).toEqual([]);
+
+		commands.flush(world);
+
+		expect(world.get(spawned, Position)).toEqual({ x: 1, y: 2 });
+		expect(world.getResource(GameTime)).toEqual({ elapsed: 9 });
+		expect(events).toEqual([55]);
 	});
 
 	it("clears scheduler systems", () => {

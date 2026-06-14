@@ -64,6 +64,22 @@ runBenchmark("query 10,000 entities with two components", 100, () => {
 	world.query(Position, Velocity);
 });
 
+runBenchmark("cached query 10,000 entities with two components", 100, () => {
+	const world = new World();
+
+	for (let index = 0; index < 10_000; index++) {
+		const entity = world.createEntity();
+		world.set(entity, Position, { x: index, y: index });
+
+		if (index % 2 === 0) {
+			world.set(entity, Velocity, { x: 1, y: 1 });
+		}
+	}
+
+	world.queryCached(Position, Velocity);
+	world.queryCached(Position, Velocity);
+});
+
 runBenchmark("queryEach movement over 5,000 matching entities", 100, () => {
 	const world = new World();
 
@@ -96,4 +112,17 @@ runBenchmark("query 10,000 entities with three components", 100, () => {
 	}
 
 	world.query(Position, Velocity, Health);
+});
+
+runBenchmark("flush command buffer with 10,000 component writes", 100, () => {
+	const world = new World();
+	const commands = world.commands();
+
+	for (let index = 0; index < 10_000; index++) {
+		commands.spawn((entity) => {
+			world.set(entity, Position, { x: index, y: index });
+		});
+	}
+
+	commands.flush(world);
 });

@@ -4,6 +4,11 @@
 
 export type Entity = number;
 
+export interface EntityHandle {
+	readonly id: Entity;
+	readonly generation: number;
+}
+
 export interface Component<T> {
 	readonly id: string;
 	readonly _type?: T;
@@ -34,7 +39,22 @@ export interface EntityRecord {
 
 export interface System {
 	readonly name?: string;
+	readonly phase?: string;
+	readonly before?: readonly string[];
+	readonly after?: readonly string[];
 	readonly run: (world: World) => void;
+}
+
+export interface SystemOptions {
+	readonly phase?: string;
+	readonly before?: readonly string[];
+	readonly after?: readonly string[];
+}
+
+export interface RelationEntry<T> {
+	readonly source: Entity;
+	readonly target: Entity;
+	readonly value: T;
 }
 
 type QueryData<T extends readonly ComponentType<unknown>[]> = {
@@ -83,17 +103,20 @@ export function defineRelation<T = true>(id: string): Relation<T> {
 export function defineSystem(
 	name: string,
 	run: (world: World) => void,
+	options: SystemOptions = {},
 ): System {
-	return { name, run };
+	return { name, run, ...options };
 }
 
 export function defineQuerySystem<T extends readonly ComponentType<unknown>[]>(
 	name: string,
 	componentTypes: T,
 	run: (world: World, entity: Entity, ...components: QueryData<T>) => void,
+	options: SystemOptions = {},
 ): System {
 	return {
 		name,
+		...options,
 		run: (world) => {
 			world.queryEach(componentTypes, (entity, ...components) => {
 				run(world, entity, ...components);
@@ -104,20 +127,178 @@ export function defineQuerySystem<T extends readonly ComponentType<unknown>[]>(
 
 export class Scheduler {
 	private readonly systems: System[] = [];
+	private readonly phases: string[] = [];
 
-	public add(system: System): this {
-		this.systems.push(system);
+	public phase(name: string): this {
+		if (this.phases.indexOf(name) < 0) {
+			this.phases.push(name);
+		}
+
+		return this;
+	}
+
+	public add(system: System, options: SystemOptions = {}): this {
+		this.systems.push({ ...system, ...options });
 		return this;
 	}
 
 	public run(world: World): void {
-		for (const system of this.systems) {
-			system.run(world);
+		for (const phase of this.getPhaseOrder()) {
+			for (const system of this.sortSystems(this.getSystemsForPhase(phase))) {
+				system.run(world);
+			}
 		}
 	}
 
 	public clear(): void {
 		this.systems.clear();
+	}
+
+	private getPhaseOrder(): string[] {
+		const order = [...this.phases];
+
+		for (const system of this.systems) {
+			const phase = system.phase ?? "default";
+
+			if (order.indexOf(phase) < 0) {
+				order.push(phase);
+			}
+		}
+
+		return order;
+	}
+
+	private getSystemsForPhase(phase: string): System[] {
+		const systems: System[] = [];
+
+		for (const system of this.systems) {
+			if ((system.phase ?? "default") === phase) {
+				systems.push(system);
+			}
+		}
+
+		return systems;
+	}
+
+	private sortSystems(systems: System[]): System[] {
+		const remaining = [...systems];
+		const sorted: System[] = [];
+
+		while (remaining.size() > 0) {
+			let progressed = false;
+
+			for (let index = 0; index < remaining.size(); index++) {
+				const system = remaining[index];
+
+				if (system === undefined || this.isSystemBlocked(system, remaining)) {
+					continue;
+				}
+
+				sorted.push(system);
+				remaining.remove(index);
+				progressed = true;
+				break;
+			}
+
+			if (!progressed) {
+				error("Scheduler dependency cycle detected.");
+			}
+		}
+
+		return sorted;
+	}
+
+	private isSystemBlocked(system: System, remaining: System[]): boolean {
+		for (const dependencyName of system.after ?? []) {
+			if (this.hasNamedSystem(remaining, dependencyName, system)) {
+				return true;
+			}
+		}
+
+		if (system.name === undefined) {
+			return false;
+		}
+
+		for (const other of remaining) {
+			if (other === system) {
+				continue;
+			}
+
+			if ((other.before ?? []).indexOf(system.name) >= 0) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private hasNamedSystem(
+		systems: System[],
+		name: string,
+		ignoredSystem: System,
+	): boolean {
+		for (const system of systems) {
+			if (system !== ignoredSystem && system.name === name) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+}
+
+export class CommandBuffer {
+	private readonly commands: ((world: World) => void)[] = [];
+
+	public spawn(callback?: (entity: Entity) => void): this {
+		this.commands.push((world) => {
+			const entity = world.createEntity();
+			callback?.(entity);
+		});
+
+		return this;
+	}
+
+	public delete(entity: Entity): this {
+		this.commands.push((world) => world.deleteEntity(entity));
+		return this;
+	}
+
+	public set<T>(
+		entity: Entity,
+		componentType: ComponentType<T>,
+		component: T,
+	): this {
+		this.commands.push((world) => world.set(entity, componentType, component));
+		return this;
+	}
+
+	public remove<T>(entity: Entity, componentType: ComponentType<T>): this {
+		this.commands.push((world) => world.remove(entity, componentType));
+		return this;
+	}
+
+	public addTag(entity: Entity, tag: Tag): this {
+		this.commands.push((world) => world.addTag(entity, tag));
+		return this;
+	}
+
+	public setResource<T>(resource: Resource<T>, value: T): this {
+		this.commands.push((world) => world.setResource(resource, value));
+		return this;
+	}
+
+	public emit<T>(eventType: EventType<T>, payload: T): this {
+		this.commands.push((world) => world.emit(eventType, payload));
+		return this;
+	}
+
+	public flush(world: World): void {
+		for (const command of this.commands) {
+			command(world);
+		}
+
+		this.commands.clear();
 	}
 }
 
@@ -128,6 +309,14 @@ export class World {
 	private readonly records = new Map<Entity, MutableEntityRecord>();
 	// Component id -> sparse-set component store.
 	private readonly components = new Map<string, ComponentStore>();
+	// Entity id -> sorted component ids. This is the lightweight archetype index.
+	private readonly entityComponents = new Map<Entity, string[]>();
+	// Cached query results are invalidated whenever component membership changes.
+	private readonly queryCache = new Map<string, Entity[]>();
+	// Change maps are intentionally frame-like: call clearChanges after systems observe them.
+	private readonly addedComponents = new Map<string, Entity[]>();
+	private readonly changedComponents = new Map<string, Entity[]>();
+	private readonly removedComponents = new Map<string, Entity[]>();
 	// Resource id -> singleton resource value.
 	private readonly resources = new Map<string, unknown>();
 	// Event id -> listener list.
@@ -147,6 +336,43 @@ export class World {
 		});
 
 		return entity;
+	}
+
+	public createEntityHandle(): EntityHandle {
+		const entity = this.createEntity();
+		return this.getEntityHandle(entity) as EntityHandle;
+	}
+
+	public getEntityHandle(entity: Entity): EntityHandle | undefined {
+		const record = this.records.get(entity);
+
+		if (record === undefined) {
+			return undefined;
+		}
+
+		return {
+			id: entity,
+			generation: record.generation,
+		};
+	}
+
+	public isHandleAlive(handle: EntityHandle): boolean {
+		const record = this.records.get(handle.id);
+		return record?.alive === true && record.generation === handle.generation;
+	}
+
+	public resolveEntity(handle: EntityHandle): Entity | undefined {
+		if (!this.isHandleAlive(handle)) {
+			return undefined;
+		}
+
+		return handle.id;
+	}
+
+	public deleteEntityHandle(handle: EntityHandle): void {
+		if (this.isHandleAlive(handle)) {
+			this.deleteEntity(handle.id);
+		}
 	}
 
 	public getEntityRecord(entity: Entity): EntityRecord | undefined {
@@ -176,9 +402,12 @@ export class World {
 		record.alive = false;
 		record.generation++;
 
-		this.components.forEach((componentStore) => {
-			this.removeFromComponentStore(componentStore, entity);
+		this.components.forEach((componentStore, componentId) => {
+			this.removeFromComponentStore(componentStore, entity, componentId);
 		});
+
+		this.entityComponents.delete(entity);
+		this.invalidateQueryCache();
 
 		this.relations.forEach((relationStore) => {
 			relationStore.delete(entity);
@@ -205,10 +434,16 @@ export class World {
 		}
 
 		const componentStore = this.getOrCreateComponentStore(componentType);
+		const hadComponent = componentStore.values.has(entity);
 
-		if (!componentStore.values.has(entity)) {
+		if (!hadComponent) {
 			componentStore.entityToIndex.set(entity, componentStore.entities.size());
 			componentStore.entities.push(entity);
+			this.addToArchetype(entity, componentType.id);
+			this.recordComponentAdded(componentType.id, entity);
+			this.invalidateQueryCache();
+		} else {
+			this.recordComponentChanged(componentType.id, entity);
 		}
 
 		componentStore.values.set(entity, component);
@@ -275,7 +510,7 @@ export class World {
 			return;
 		}
 
-		this.removeFromComponentStore(componentStore, entity);
+		this.removeFromComponentStore(componentStore, entity, componentType.id);
 	}
 
 	public removeComponent<T>(
@@ -360,6 +595,19 @@ export class World {
 		return entities;
 	}
 
+	public queryCached(...componentTypes: ComponentType<unknown>[]): Entity[] {
+		const cacheKey = this.getQueryKey(componentTypes);
+		const cached = this.queryCache.get(cacheKey);
+
+		if (cached !== undefined) {
+			return [...cached];
+		}
+
+		const entities = this.query(...componentTypes);
+		this.queryCache.set(cacheKey, [...entities]);
+		return entities;
+	}
+
 	public queryEach<T extends readonly ComponentType<unknown>[]>(
 		componentTypes: T,
 		callback: (entity: Entity, ...components: QueryData<T>) => void,
@@ -371,6 +619,42 @@ export class World {
 
 			callback(entity, ...components);
 		}
+	}
+
+	public getArchetype(entity: Entity): string[] {
+		const componentIds = this.entityComponents.get(entity);
+
+		if (!this.isAlive(entity) || componentIds === undefined) {
+			return [];
+		}
+
+		return [...componentIds];
+	}
+
+	public getArchetypeKey(entity: Entity): string {
+		return this.getArchetype(entity).join("|");
+	}
+
+	public added<T>(componentType: ComponentType<T>): Entity[] {
+		return [...(this.addedComponents.get(componentType.id) ?? [])];
+	}
+
+	public changed<T>(componentType: ComponentType<T>): Entity[] {
+		return [...(this.changedComponents.get(componentType.id) ?? [])];
+	}
+
+	public removed<T>(componentType: ComponentType<T>): Entity[] {
+		return [...(this.removedComponents.get(componentType.id) ?? [])];
+	}
+
+	public clearChanges(): void {
+		this.addedComponents.clear();
+		this.changedComponents.clear();
+		this.removedComponents.clear();
+	}
+
+	public commands(): CommandBuffer {
+		return new CommandBuffer();
 	}
 
 	public setResource<T>(resource: Resource<T>, value: T): void {
@@ -549,6 +833,10 @@ export class World {
 		return targets;
 	}
 
+	public targetsOf<T>(source: Entity, relation: Relation<T>): Entity[] {
+		return this.relationTargets(source, relation);
+	}
+
 	public relationSources<T>(relation: Relation<T>, target: Entity): Entity[] {
 		if (!this.isAlive(target)) {
 			return [];
@@ -571,6 +859,58 @@ export class World {
 		return sources;
 	}
 
+	public sourcesOf<T>(relation: Relation<T>, target: Entity): Entity[] {
+		return this.relationSources(relation, target);
+	}
+
+	public relationEntries<T>(relation: Relation<T>): RelationEntry<T>[] {
+		const relationStore = this.relations.get(relation.id);
+		const entries: RelationEntry<T>[] = [];
+
+		if (relationStore === undefined) {
+			return entries;
+		}
+
+		relationStore.forEach((targets, source) => {
+			if (!this.isAlive(source)) {
+				return;
+			}
+
+			targets.forEach((value, target) => {
+				if (this.isAlive(target)) {
+					entries.push({
+						source,
+						target,
+						value: value as T,
+					});
+				}
+			});
+		});
+
+		return entries;
+	}
+
+	public queryRelation<T>(
+		relation: Relation<T>,
+		target?: Entity,
+	): RelationEntry<T>[] {
+		const entries = this.relationEntries(relation);
+
+		if (target === undefined) {
+			return entries;
+		}
+
+		const matchingEntries: RelationEntry<T>[] = [];
+
+		for (const entry of entries) {
+			if (entry.target === target) {
+				matchingEntries.push(entry);
+			}
+		}
+
+		return matchingEntries;
+	}
+
 	private getOrCreateComponentStore<T>(
 		componentType: ComponentType<T>,
 	): ComponentStore {
@@ -591,6 +931,7 @@ export class World {
 	private removeFromComponentStore(
 		componentStore: ComponentStore,
 		entity: Entity,
+		componentId: string,
 	): void {
 		// If the entity is not in the sparse set, there is nothing to remove.
 		const removedIndex = componentStore.entityToIndex.get(entity);
@@ -611,6 +952,87 @@ export class World {
 		componentStore.entities.remove(lastIndex);
 		componentStore.entityToIndex.delete(entity);
 		componentStore.values.delete(entity);
+		this.removeFromArchetype(entity, componentId);
+		this.recordComponentRemoved(componentId, entity);
+		this.invalidateQueryCache();
+	}
+
+	private addToArchetype(entity: Entity, componentId: string): void {
+		let componentIds = this.entityComponents.get(entity);
+
+		if (componentIds === undefined) {
+			componentIds = [];
+			this.entityComponents.set(entity, componentIds);
+		}
+
+		if (componentIds.indexOf(componentId) < 0) {
+			componentIds.push(componentId);
+			componentIds.sort();
+		}
+	}
+
+	private removeFromArchetype(entity: Entity, componentId: string): void {
+		const componentIds = this.entityComponents.get(entity);
+
+		if (componentIds === undefined) {
+			return;
+		}
+
+		const index = componentIds.indexOf(componentId);
+
+		if (index >= 0) {
+			componentIds.remove(index);
+		}
+
+		if (componentIds.size() === 0) {
+			this.entityComponents.delete(entity);
+		}
+	}
+
+	private invalidateQueryCache(): void {
+		this.queryCache.clear();
+	}
+
+	private getQueryKey(
+		componentTypes: readonly ComponentType<unknown>[],
+	): string {
+		const componentIds: string[] = [];
+
+		for (const componentType of componentTypes) {
+			componentIds.push(componentType.id);
+		}
+
+		componentIds.sort();
+		return componentIds.join("|");
+	}
+
+	private recordComponentAdded(componentId: string, entity: Entity): void {
+		this.pushUnique(this.addedComponents, componentId, entity);
+	}
+
+	private recordComponentChanged(componentId: string, entity: Entity): void {
+		this.pushUnique(this.changedComponents, componentId, entity);
+	}
+
+	private recordComponentRemoved(componentId: string, entity: Entity): void {
+		this.pushUnique(this.removedComponents, componentId, entity);
+	}
+
+	private pushUnique(
+		componentMap: Map<string, Entity[]>,
+		componentId: string,
+		entity: Entity,
+	): void {
+		let entities = componentMap.get(componentId);
+
+		if (entities === undefined) {
+			entities = [];
+			componentMap.set(componentId, entities);
+		}
+
+		if (entities.indexOf(entity) < 0) {
+			entities.push(entity);
+		}
 	}
 
 	private getLivingEntities(): Entity[] {
