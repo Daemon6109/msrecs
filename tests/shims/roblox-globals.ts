@@ -18,3 +18,39 @@ const globals = globalThis as Record<string, unknown>;
 
 globals.error ??= robloxError;
 globals.typeOf ??= robloxTypeOf;
+
+const arrayPrototype = Array.prototype as Record<string, unknown>;
+
+arrayPrototype.clear ??= function clearArray(this: unknown[]) {
+	this.splice(0);
+};
+
+arrayPrototype.remove ??= function removeArrayValue(
+	this: unknown[],
+	index: number,
+) {
+	this.splice(index, 1);
+};
+
+const mapSizeDescriptor = Object.getOwnPropertyDescriptor(
+	Map.prototype,
+	"size",
+);
+
+if (mapSizeDescriptor !== undefined) {
+	Object.defineProperty(Map.prototype, "size", {
+		get() {
+			const count = mapSizeDescriptor.get?.call(this) ?? 0;
+			const size = (() => count) as unknown as number;
+
+			Object.defineProperty(size, Symbol.toPrimitive, {
+				value: () => count,
+				configurable: true,
+			});
+
+			return size;
+		},
+		configurable: true,
+		enumerable: false,
+	});
+}
