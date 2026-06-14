@@ -25,6 +25,10 @@ arrayPrototype.clear ??= function clearArray(this: unknown[]) {
 	this.splice(0);
 };
 
+arrayPrototype.size ??= function getArraySize(this: unknown[]) {
+	return this.length;
+};
+
 arrayPrototype.remove ??= function removeArrayValue(
 	this: unknown[],
 	index: number,

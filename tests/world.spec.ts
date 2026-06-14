@@ -189,6 +189,7 @@ describe("World", () => {
 		world.addComponent(entity, Position, { x: 12, y: 30 });
 
 		expect(world.getComponent(entity, Position)).toEqual({ x: 12, y: 30 });
+		expect(world.query(Position)).toEqual([entity]);
 	});
 
 	it("updates a component value", () => {
@@ -280,6 +281,34 @@ describe("World", () => {
 		world.addComponent(positionedOnly, Position, { x: 3, y: 4 });
 
 		expect(world.query(Position, Velocity)).toEqual([moving]);
+	});
+
+	it("keeps sparse component stores valid after removing a middle entity", () => {
+		const world = new World();
+		const first = world.createEntity();
+		const removed = world.createEntity();
+		const last = world.createEntity();
+
+		world.set(first, Position, { x: 1, y: 1 });
+		world.set(removed, Position, { x: 2, y: 2 });
+		world.set(last, Position, { x: 3, y: 3 });
+		world.remove(removed, Position);
+
+		expect(world.query(Position).sort()).toEqual([first, last].sort());
+		expect(world.get(last, Position)).toEqual({ x: 3, y: 3 });
+	});
+
+	it("does not leave stale sparse entries after deleting an entity", () => {
+		const world = new World();
+		const alive = world.createEntity();
+		const deleted = world.createEntity();
+
+		world.set(alive, Position, { x: 1, y: 1 });
+		world.set(deleted, Position, { x: 2, y: 2 });
+		world.deleteEntity(deleted);
+
+		expect(world.query(Position)).toEqual([alive]);
+		expect(world.get(deleted, Position)).toBeUndefined();
 	});
 
 	it("supports tags as zero-data components", () => {

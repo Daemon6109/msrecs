@@ -50,6 +50,16 @@ interface MutableEntityRecord {
 	generation: number;
 }
 
+// A component store is a sparse set:
+// - values stores the actual component data by entity id.
+// - entities is a dense list of entities that currently have this component.
+// - entityToIndex lets us remove an entity from entities in O(1) by swap-removing.
+interface ComponentStore {
+	entities: Entity[];
+	entityToIndex: Map<Entity, number>;
+	values: Map<Entity, unknown>;
+}
+
 export function defineComponent<T>(id: string): Component<T> {
 	return { id };
 }
@@ -112,11 +122,17 @@ export class Scheduler {
 }
 
 export class World {
+	// Entity ids only move forward for now; this keeps stale-id behavior easy to reason about.
 	private nextEntityId = 1;
+	// Entity records answer: "does this id exist, is it alive, and what generation is it?"
 	private readonly records = new Map<Entity, MutableEntityRecord>();
-	private readonly components = new Map<string, Map<Entity, unknown>>();
+	// Component id -> sparse-set component store.
+	private readonly components = new Map<string, ComponentStore>();
+	// Resource id -> singleton resource value.
 	private readonly resources = new Map<string, unknown>();
+	// Event id -> listener list.
 	private readonly events = new Map<string, EventListener<unknown>[]>();
+	// Relation id -> source entity -> target entity -> relation payload.
 	private readonly relations = new Map<
 		string,
 		Map<Entity, Map<Entity, unknown>>
@@ -161,7 +177,7 @@ export class World {
 		record.generation++;
 
 		this.components.forEach((componentStore) => {
-			componentStore.delete(entity);
+			this.removeFromComponentStore(componentStore, entity);
 		});
 
 		this.relations.forEach((relationStore) => {
@@ -188,7 +204,14 @@ export class World {
 			);
 		}
 
-		this.getOrCreateComponentStore(componentType).set(entity, component);
+		const componentStore = this.getOrCreateComponentStore(componentType);
+
+		if (!componentStore.values.has(entity)) {
+			componentStore.entityToIndex.set(entity, componentStore.entities.size());
+			componentStore.entities.push(entity);
+		}
+
+		componentStore.values.set(entity, component);
 	}
 
 	public addComponent<T>(
@@ -207,7 +230,9 @@ export class World {
 			return undefined;
 		}
 
-		return this.components.get(componentType.id)?.get(entity) as T | undefined;
+		return this.components.get(componentType.id)?.values.get(entity) as
+			| T
+			| undefined;
 	}
 
 	public getComponent<T>(
@@ -244,7 +269,13 @@ export class World {
 	}
 
 	public remove<T>(entity: Entity, componentType: ComponentType<T>): void {
-		this.components.get(componentType.id)?.delete(entity);
+		const componentStore = this.components.get(componentType.id);
+
+		if (componentStore === undefined) {
+			return;
+		}
+
+		this.removeFromComponentStore(componentStore, entity);
 	}
 
 	public removeComponent<T>(
@@ -257,7 +288,7 @@ export class World {
 	public has<T>(entity: Entity, componentType: ComponentType<T>): boolean {
 		return (
 			this.isAlive(entity) &&
-			this.components.get(componentType.id)?.has(entity) === true
+			this.components.get(componentType.id)?.values.has(entity) === true
 		);
 	}
 
@@ -281,21 +312,50 @@ export class World {
 	}
 
 	public query(...componentTypes: ComponentType<unknown>[]): Entity[] {
-		const entities: Entity[] = [];
+		if (componentTypes.size() === 0) {
+			return this.getLivingEntities();
+		}
 
-		this.records.forEach((record, entity) => {
-			if (!record.alive) {
-				return;
+		let smallestStore: ComponentStore | undefined;
+
+		for (const componentType of componentTypes) {
+			const componentStore = this.components.get(componentType.id);
+
+			if (componentStore === undefined) {
+				return [];
 			}
 
+			if (
+				smallestStore === undefined ||
+				componentStore.entities.size() < smallestStore.entities.size()
+			) {
+				smallestStore = componentStore;
+			}
+		}
+
+		if (smallestStore === undefined) {
+			return [];
+		}
+
+		const entities: Entity[] = [];
+
+		for (const entity of smallestStore.entities) {
+			if (!this.isAlive(entity)) {
+				continue;
+			}
+
+			let matches = true;
 			for (const componentType of componentTypes) {
 				if (!this.has(entity, componentType)) {
-					return;
+					matches = false;
+					break;
 				}
 			}
 
-			entities.push(entity);
-		});
+			if (matches) {
+				entities.push(entity);
+			}
+		}
 
 		return entities;
 	}
@@ -513,14 +573,55 @@ export class World {
 
 	private getOrCreateComponentStore<T>(
 		componentType: ComponentType<T>,
-	): Map<Entity, unknown> {
+	): ComponentStore {
 		let componentStore = this.components.get(componentType.id);
 
 		if (componentStore === undefined) {
-			componentStore = new Map<Entity, unknown>();
+			componentStore = {
+				entities: [],
+				entityToIndex: new Map<Entity, number>(),
+				values: new Map<Entity, unknown>(),
+			};
 			this.components.set(componentType.id, componentStore);
 		}
 
 		return componentStore;
+	}
+
+	private removeFromComponentStore(
+		componentStore: ComponentStore,
+		entity: Entity,
+	): void {
+		// If the entity is not in the sparse set, there is nothing to remove.
+		const removedIndex = componentStore.entityToIndex.get(entity);
+
+		if (removedIndex === undefined) {
+			return;
+		}
+
+		// Swap the final dense entity into the removed slot, then trim the end.
+		const lastIndex = componentStore.entities.size() - 1;
+		const lastEntity = componentStore.entities[lastIndex];
+
+		if (removedIndex !== lastIndex && lastEntity !== undefined) {
+			componentStore.entities[removedIndex] = lastEntity;
+			componentStore.entityToIndex.set(lastEntity, removedIndex);
+		}
+
+		componentStore.entities.remove(lastIndex);
+		componentStore.entityToIndex.delete(entity);
+		componentStore.values.delete(entity);
+	}
+
+	private getLivingEntities(): Entity[] {
+		const entities: Entity[] = [];
+
+		this.records.forEach((record, entity) => {
+			if (record.alive) {
+				entities.push(entity);
+			}
+		});
+
+		return entities;
 	}
 }

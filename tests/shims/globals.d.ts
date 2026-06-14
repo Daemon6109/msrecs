@@ -5,6 +5,7 @@ declare global {
 	interface Array<T> {
 		clear(): void;
 		remove(index: number): void;
+		size(): number;
 	}
 
 	interface Map<K, V> {

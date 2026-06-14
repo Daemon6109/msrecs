@@ -1,3 +1,4 @@
+import "../tests/shims/roblox-globals";
 import { defineComponent, World } from "../src";
 
 const Position = defineComponent<{ x: number; y: number }>("Position");
