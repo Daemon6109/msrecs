@@ -1,21 +1,43 @@
 {
 	"compilerOptions": {
-		"target": "ESNext",
-		"module": "commonjs",
-		"moduleResolution": "Node",
-		"moduleDetection": "force",
-		"strict": true,
-		"noLib": true,
+		"typeRoots": ["node_modules/@rbxts"],
 		"allowSyntheticDefaultImports": true,
+		"experimentalDecorators": true,
+		"moduleDetection": "force",
+		"moduleResolution": "Node",
+		"downlevelIteration": true,
+		"resolveJsonModule": true,
+		"esModuleInterop": true,
+		"module": "commonjs",
+		"incremental": true,
+		"target": "ESNext",
+		"baseUrl": "src",
 		"rootDir": "src",
 		"outDir": "dist",
-		"typeRoots": ["node_modules/@rbxts"],
+		"strict": true,
+		"noLib": true,
 		"skipLibCheck": true,
+		"noImplicitAny": true,
+		"strictNullChecks": true,
+		"strictFunctionTypes": true,
+		"strictBindCallApply": true,
+		"strictPropertyInitialization": true,
+		"noImplicitThis": true,
+		"alwaysStrict": true,
+		"noUnusedLocals": true,
+		"noUnusedParameters": false,
+		"noImplicitReturns": true,
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedIndexedAccess": true,
 		"noImplicitOverride": true,
-		"noUnusedLocals": false,
-		"noUnusedParameters": false
+		"noPropertyAccessFromIndexSignature": false,
+		"allowUnusedLabels": false,
+		"allowUnreachableCode": false,
+		"plugins": [
+			{
+				"transform": "rbxts-transformer-jest"
+			}
+		]
 	},
 	"include": ["src"]
 }

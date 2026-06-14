@@ -1,21 +1,29 @@
 {
-  "name": "@daemon6109/msrecs",
-  "author": {
-    "name": "Matthew Radulovich"
-  },
-  "module": "src/index.ts",
-  "type": "module",
-  "private": false,
-  "repository": {
-    "url": "https://github.com/Daemon6109/msrecs.git"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "2.5.0",
-    "@isentinel/jest-roblox": "^0.3.4",
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5",
-    "roblox-ts": "^3.0.0"
-  }
+	"name": "@daemon6109/msrecs",
+	"author": {
+		"name": "Matthew Radulovich"
+	},
+	"module": "src/index.ts",
+	"type": "module",
+	"private": false,
+	"repository": {
+		"url": "https://github.com/Daemon6109/msrecs.git"
+	},
+	"devDependencies": {
+		"@rbxts/compiler-types": "^3.0.0-types.0",
+		"@rbxts/types": "^1.0.925",
+		"@isentinel/dict-rbxts": "latest",
+		"@isentinel/dict-roblox": "latest",
+		"@isentinel/dict-wally": "latest",
+		"@biomejs/biome": "2.5.0",
+		"@isentinel/jest-roblox": "latest",
+		"@types/bun": "latest",
+		"cspell": "latest",
+		"@rbxts/jest": "^3.16.0-ts.1",
+		"rbxts-transformer-jest": "^0.0.6"
+	},
+	"peerDependencies": {
+		"typescript": "=5.5.3",
+		"roblox-ts": "^3.0.0"
+	}
 }

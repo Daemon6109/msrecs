@@ -1,0 +1,36 @@
+{
+	"version": "0.2",
+	"language": "en",
+	"import": [
+		"@isentinel/dict-rbxts/cspell-ext.json",
+		"@isentinel/dict-roblox/cspell-ext.json",
+		"@isentinel/dict-wally/cspell-ext.json"
+	],
+	"ignorePaths": [
+		"node_modules/**",
+		"dist/**",
+		"include/**",
+		"*.min.js",
+		"bun.lock",
+		"sourcemap.json",
+		"coverage/**",
+		"**/*.tsbuildinfo",
+		"*.project.json",
+		"rokit.toml",
+		"bunfig.toml",
+		"cspell.json",
+		"*.env"
+	],
+	"dictionaries": ["lua", "typescript", "node", "software-terms"],
+	"enableFiletypes": [
+		"typescript",
+		"typescriptreact",
+		"markdown",
+		"json",
+		"yaml",
+		"lua",
+		"luau"
+	],
+	"words": [],
+	"ignoreWords": []
+}
