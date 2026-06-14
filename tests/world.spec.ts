@@ -620,16 +620,15 @@ describe("World", () => {
 	it("buffers commands until flushed", () => {
 		const world = new World();
 		const events: number[] = [];
-		let spawned = 0;
 
 		world.on(EnemyKilled, (event) => events.push(event.enemy));
 
-		const commands = world
-			.commands()
-			.spawn((entity) => {
-				spawned = entity;
-				world.set(entity, Position, { x: 1, y: 2 });
-			})
+		const commands = world.commands();
+		const spawned = commands.spawn();
+
+		commands
+			.set(spawned, Position, { x: 1, y: 2 })
+			.addTag(spawned, Enemy)
 			.setResource(GameTime, { elapsed: 9 })
 			.emit(EnemyKilled, { enemy: 55, killer: 1 });
 
@@ -639,9 +638,57 @@ describe("World", () => {
 
 		commands.flush(world);
 
-		expect(world.get(spawned, Position)).toEqual({ x: 1, y: 2 });
+		const entities = world.query(Position, Enemy);
+		const entity = entities[0];
+
+		expect(entities.size()).toBe(1);
+		expect(entity).toBeDefined();
+
+		if (entity === undefined) {
+			return;
+		}
+
+		expect(world.get(entity, Position)).toEqual({ x: 1, y: 2 });
 		expect(world.getResource(GameTime)).toEqual({ elapsed: 9 });
 		expect(events).toEqual([55]);
+	});
+
+	it("buffers relations between entities spawned in the same command buffer", () => {
+		const world = new World();
+		const commands = world.commands();
+		const tower = commands.spawn();
+		const enemy = commands.spawn();
+
+		commands
+			.set(tower, Position, { x: 0, y: 0 })
+			.set(enemy, Health, { current: 25, max: 25 })
+			.setRelation(tower, Targeting, enemy, { priority: 100 });
+
+		commands.flush(world);
+
+		const towerEntity = world.query(Position)[0];
+		const enemyEntity = world.query(Health)[0];
+
+		expect(towerEntity).toBeDefined();
+		expect(enemyEntity).toBeDefined();
+
+		if (towerEntity === undefined || enemyEntity === undefined) {
+			return;
+		}
+
+		expect(world.getRelation(towerEntity, Targeting, enemyEntity)).toEqual({
+			priority: 100,
+		});
+	});
+
+	it("throws when flushing a command that references an uncreated spawned entity", () => {
+		const world = new World();
+
+		const commands = world
+			.commands()
+			.set({ id: 404 }, Position, { x: 1, y: 2 });
+
+		expect(() => commands.flush(world)).toThrow();
 	});
 
 	it("clears scheduler systems", () => {

@@ -119,9 +119,8 @@ runBenchmark("flush command buffer with 10,000 component writes", 100, () => {
 	const commands = world.commands();
 
 	for (let index = 0; index < 10_000; index++) {
-		commands.spawn((entity) => {
-			world.set(entity, Position, { x: index, y: index });
-		});
+		const entity = commands.spawn();
+		commands.set(entity, Position, { x: index, y: index });
 	}
 
 	commands.flush(world);
