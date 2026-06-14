@@ -39,6 +39,7 @@ interface ComponentStore {
 }
 
 interface ArchetypeStore {
+	componentIds: string[];
 	entities: Entity[];
 	entityToIndex: Map<Entity, number>;
 }
@@ -66,9 +67,18 @@ export class World {
 	// Cached query results are invalidated whenever component membership changes.
 	private readonly queryCache = new Map<string, Entity[]>();
 	// Change maps are intentionally frame-like: call clearChanges after systems observe them.
-	private readonly addedComponents = new Map<string, ComponentChange[]>();
-	private readonly changedComponents = new Map<string, ComponentChange[]>();
-	private readonly removedComponents = new Map<string, ComponentChange[]>();
+	private readonly addedComponents = new Map<
+		string,
+		Map<Entity, ComponentChange>
+	>();
+	private readonly changedComponents = new Map<
+		string,
+		Map<Entity, ComponentChange>
+	>();
+	private readonly removedComponents = new Map<
+		string,
+		Map<Entity, ComponentChange>
+	>();
 	private readonly componentObservers = new Map<string, ComponentObservers>();
 	// Resource id -> singleton resource value.
 	private readonly resources = new Map<string, unknown>();
@@ -92,7 +102,6 @@ export class World {
 			generation: 0,
 		});
 		this.entityComponents.set(entity, []);
-		this.moveEntityToArchetype(entity, "");
 
 		return entity;
 	}
@@ -437,15 +446,15 @@ export class World {
 	}
 
 	public addedChanges<T>(componentType: ComponentType<T>): ComponentChange[] {
-		return [...(this.addedComponents.get(componentType.id) ?? [])];
+		return this.getChanges(this.addedComponents, componentType.id);
 	}
 
 	public changedChanges<T>(componentType: ComponentType<T>): ComponentChange[] {
-		return [...(this.changedComponents.get(componentType.id) ?? [])];
+		return this.getChanges(this.changedComponents, componentType.id);
 	}
 
 	public removedChanges<T>(componentType: ComponentType<T>): ComponentChange[] {
-		return [...(this.removedComponents.get(componentType.id) ?? [])];
+		return this.getChanges(this.removedComponents, componentType.id);
 	}
 
 	public clearChanges(): void {
@@ -586,14 +595,9 @@ export class World {
 				generation: entity.generation,
 			});
 			this.entityComponents.set(entity.id, []);
-			this.moveEntityToArchetype(entity.id, "");
 
 			for (const component of entity.components) {
 				this.restoreComponent(entity.id, component);
-			}
-
-			if (!entity.alive) {
-				this.removeEntityFromArchetype(entity.id);
 			}
 		}
 
@@ -637,7 +641,7 @@ export class World {
 		this.archetypes.forEach((archetypeStore, key) => {
 			archetypes.push({
 				key,
-				components: this.getComponentIdsFromKey(key),
+				components: [...archetypeStore.componentIds],
 				entities: archetypeStore.entities.size(),
 			});
 		});
@@ -975,7 +979,7 @@ export class World {
 		}
 
 		if (componentIds.size() === 0) {
-			this.moveEntityBetweenArchetypes(entity, previousKey, "");
+			this.removeEntityFromArchetype(entity);
 			return;
 		}
 
@@ -1008,8 +1012,8 @@ export class World {
 	): Entity[] {
 		const entities: Entity[] = [];
 
-		this.archetypes.forEach((archetypeStore, archetypeKey) => {
-			if (!this.archetypeMatches(archetypeKey, componentTypes)) {
+		this.archetypes.forEach((archetypeStore) => {
+			if (!this.archetypeMatches(archetypeStore, componentTypes)) {
 				return;
 			}
 
@@ -1024,13 +1028,11 @@ export class World {
 	}
 
 	private archetypeMatches(
-		archetypeKey: string,
+		archetypeStore: ArchetypeStore,
 		componentTypes: readonly ComponentType<unknown>[],
 	): boolean {
-		const componentIds = this.getComponentIdsFromKey(archetypeKey);
-
 		for (const componentType of componentTypes) {
-			if (componentIds.indexOf(componentType.id) < 0) {
+			if (archetypeStore.componentIds.indexOf(componentType.id) < 0) {
 				return false;
 			}
 		}
@@ -1044,6 +1046,7 @@ export class World {
 
 		if (archetypeStore === undefined) {
 			archetypeStore = {
+				componentIds: this.getComponentIdsFromKey(archetypeKey),
 				entities: [],
 				entityToIndex: new Map<Entity, number>(),
 			};
@@ -1129,37 +1132,56 @@ export class World {
 	}
 
 	private pushUnique(
-		componentMap: Map<string, ComponentChange[]>,
+		componentMap: Map<string, Map<Entity, ComponentChange>>,
 		componentId: string,
 		entity: Entity,
 	): void {
 		let changes = componentMap.get(componentId);
 
 		if (changes === undefined) {
-			changes = [];
+			changes = new Map<Entity, ComponentChange>();
 			componentMap.set(componentId, changes);
 		}
 
-		for (const change of changes) {
-			if (change.entity === entity) {
-				return;
-			}
+		if (!changes.has(entity)) {
+			changes.set(entity, { entity, tick: this.tick });
 		}
-
-		changes.push({ entity, tick: this.tick });
 	}
 
 	private getChangedEntities(
-		componentMap: Map<string, ComponentChange[]>,
+		componentMap: Map<string, Map<Entity, ComponentChange>>,
 		componentId: string,
 	): Entity[] {
 		const entities: Entity[] = [];
+		const changes = componentMap.get(componentId);
 
-		for (const change of componentMap.get(componentId) ?? []) {
-			entities.push(change.entity);
+		if (changes === undefined) {
+			return entities;
 		}
 
+		changes.forEach((_change, entity) => {
+			entities.push(entity);
+		});
+
 		return entities;
+	}
+
+	private getChanges(
+		componentMap: Map<string, Map<Entity, ComponentChange>>,
+		componentId: string,
+	): ComponentChange[] {
+		const changeList: ComponentChange[] = [];
+		const changes = componentMap.get(componentId);
+
+		if (changes === undefined) {
+			return changeList;
+		}
+
+		changes.forEach((change) => {
+			changeList.push(change);
+		});
+
+		return changeList;
 	}
 
 	private getOrCreateComponentObservers(

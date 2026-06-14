@@ -6,6 +6,7 @@
 		"build": "rbxtsc -p .",
 		"test": "bun test tests",
 		"bench": "bun benchmarks/world.bench.ts",
+		"playground": "bun playground/tower-defense.ts",
 		"lint": "biome check .",
 		"format": "biome format --write .",
 		"typecheck": "tsc -p tsconfig.json --noEmit"
