@@ -14,14 +14,13 @@
 		"@isentinel/dict-rbxts": "latest",
 		"@isentinel/dict-roblox": "latest",
 		"@isentinel/dict-wally": "latest",
-		"@isentinel/jest-roblox": "latest",
 		"@rbxts/compiler-types": "^3.0.0-types.0",
-		"@rbxts/jest": "^3.16.0-ts.1",
 		"@rbxts/types": "^1.0.925",
 		"@types/bun": "latest",
-		"cspell": "latest",
-		"rbxts-transformer-jest": "^0.0.6",
-		"roblox-ts": "^3.0.0",
-		"typescript": "=5.5.3"
+		"cspell": "latest"
+	},
+	"peerDependencies": {
+		"typescript": "=5.5.3",
+		"roblox-ts": "^3.0.0"
 	}
 }
