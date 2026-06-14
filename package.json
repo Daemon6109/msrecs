@@ -1,15 +1,21 @@
 {
-  "name": "msrecs",
-  "module": "index.ts",
+  "name": "@daemon6109/msrecs",
+  "author": {
+    "name": "Matthew Radulovich"
+  },
+  "module": "src/index.ts",
   "type": "module",
+  "private": false,
+  "repository": {
+    "url": "https://github.com/Daemon6109/msrecs.git"
+  },
   "devDependencies": {
     "@biomejs/biome": "2.5.0",
+    "@isentinel/jest-roblox": "^0.3.4",
     "@types/bun": "latest"
   },
   "peerDependencies": {
-    "typescript": "^5"
-  },
-  "dependencies": {
+    "typescript": "^5",
     "roblox-ts": "^3.0.0"
   }
 }

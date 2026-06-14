@@ -1,0 +1,42 @@
+{
+	"name": "MSR Development Container",
+
+	"build": {
+		"dockerfile": "Dockerfile",
+		"context": ".."
+	},
+
+	"remoteEnv": {
+		"PATH": "${containerEnv:HOME}/.rokit/bin:${containerEnv:HOME}/.local/bin:${containerEnv:PATH}"
+	},
+
+	"onCreateCommand": "bash -lc 'curl --proto \"=https\" --tlsv1.2 -sSf https://raw.githubusercontent.com/rojo-rbx/rokit/main/scripts/install.sh | bash'",
+
+	"postCreateCommand": "bash -lc 'export PATH=\"$HOME/.rokit/bin:$HOME/.local/bin:$PATH\" && rokit install --no-trust-check && bun install'",
+
+	"postStartCommand": "bash -lc 'echo \"✅ Container ready — bun $(bun --version), rokit $(rokit --version 2>/dev/null || echo missing)\"'",
+
+	"waitFor": "postCreateCommand",
+
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"js/ts.tsdk.path": "node_modules/typescript/lib",
+				"files.eol": "\n",
+				"editor.codeActionsOnSave": {
+					"source.organizeImports.biome": "explicit"
+				},
+				"editor.formatOnSave": true,
+				"editor.defaultFormatter": "biomejs.biome",
+				"terminal.integrated.defaultProfile.linux": "zsh",
+				"bun.runtime": "/usr/local/bin/bun",
+				"task.allowAutomaticTasks": "on"
+			},
+			"extensions": [
+				"oven.bun-vscode",
+				"biomejs.biome",
+				"roblox-ts.vscode-roblox-ts"
+			]
+		}
+	}
+}
