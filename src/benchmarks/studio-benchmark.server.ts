@@ -1,66 +1,7 @@
 //!native
 //!optimize 2
 
-type Entity = number;
-
-interface SpawnedEntity {
-	readonly id: number;
-}
-
-interface Component<T> {
-	readonly id: string;
-	readonly _type?: T;
-}
-
-type QueryData<T extends readonly Component<unknown>[]> = {
-	[Index in keyof T]: T[Index] extends Component<infer Value> ? Value : never;
-};
-
-interface Query<T extends readonly Component<unknown>[]> {
-	each(callback: (entity: Entity, ...components: QueryData<T>) => void): void;
-}
-
-interface CommandBuffer {
-	spawn(): SpawnedEntity;
-	set<T>(
-		entity: Entity | SpawnedEntity,
-		componentType: Component<T>,
-		component: T,
-	): CommandBuffer;
-	flush(world: World): void;
-}
-
-interface World {
-	createEntity(): Entity;
-	set<T>(entity: Entity, componentType: Component<T>, component: T): void;
-	get<T>(entity: Entity, componentType: Component<T>): T | undefined;
-	query(...componentTypes: Component<unknown>[]): Entity[];
-	queryCached(...componentTypes: Component<unknown>[]): Entity[];
-	queryObject<T extends readonly Component<unknown>[]>(
-		componentTypes: T,
-	): Query<T>;
-	queryEach<T extends readonly Component<unknown>[]>(
-		componentTypes: T,
-		callback: (entity: Entity, ...components: QueryData<T>) => void,
-	): void;
-	commands(): CommandBuffer;
-	snapshot(): unknown;
-	restore(snapshot: unknown): void;
-}
-
-interface WorldConstructor {
-	new (): World;
-}
-
-interface MSRECSModule {
-	readonly World: WorldConstructor;
-	readonly defineComponent: <T>(id: string) => Component<T>;
-}
-
-const ReplicatedStorage = game.GetService("ReplicatedStorage");
-const MSRECS = require(
-	ReplicatedStorage.WaitForChild("MSRECS") as ModuleScript,
-) as MSRECSModule;
+import * as MSRECS from "../../src";
 
 const { World, defineComponent } = MSRECS;
 
