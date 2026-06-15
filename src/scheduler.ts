@@ -1,3 +1,6 @@
+//!native
+//!optimize 2
+
 import type { System, SystemOptions, SystemTiming } from "./types";
 import type { World } from "./world";
 

@@ -1,3 +1,6 @@
+//!native
+//!optimize 2
+
 import { CommandBuffer } from "./command-buffer";
 import { Query } from "./query";
 import type {

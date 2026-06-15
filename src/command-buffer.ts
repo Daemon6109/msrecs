@@ -1,3 +1,6 @@
+//!native
+//!optimize 2
+
 import type {
 	ComponentType,
 	Entity,
