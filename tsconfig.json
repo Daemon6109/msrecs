@@ -1,6 +1,7 @@
 {
 	"compilerOptions": {
 		"tsBuildInfoFile": "dist/tsconfig.tsbuildinfo",
+		"declaration": true,
 		"typeRoots": ["node_modules/@rbxts"],
 		"allowSyntheticDefaultImports": true,
 		"experimentalDecorators": true,

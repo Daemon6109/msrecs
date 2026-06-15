@@ -3,7 +3,7 @@
 	"version": "0.1.0",
 	"private": false,
 	"scripts": {
-		"build": "rbxtsc -p .",
+		"build": "rm -rf ./dist ./include && rbxtsc -p . -i ./include && lumine && bun scripts/fix-lumine-output.ts",
 		"test": "bun test tests",
 		"bench": "bun benchmarks/world.bench.ts",
 		"playground": "bun playground/tower-defense.ts",
