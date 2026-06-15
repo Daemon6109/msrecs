@@ -1,0 +1,10 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"rootDir": "benchmarks",
+		"outDir": "benchmark-dist",
+		"tsBuildInfoFile": "benchmark-dist/tsconfig.tsbuildinfo",
+		"declaration": false
+	},
+	"include": ["benchmarks/studio-benchmark.server.ts"]
+}

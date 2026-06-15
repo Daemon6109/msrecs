@@ -3,6 +3,12 @@
 	"emitLegacyScripts": false,
 	"tree": {
 		"$className": "DataModel",
+		"ServerScriptService": {
+			"$className": "ServerScriptService",
+			"MSRECSBenchmark": {
+				"$path": "benchmark-dist/studio-benchmark.server.luau"
+			}
+		},
 		"ReplicatedStorage": {
 			"$className": "ReplicatedStorage",
 			"MSRECS": {
