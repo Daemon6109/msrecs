@@ -2,36 +2,9 @@
 	"name": "@daemon6109/msrecs",
 	"version": "0.1.0",
 	"private": false,
-	"main": "./src/index.ts",
-	"types": "./src/index.ts",
-	"exports": {
-		".": {
-			"types": "./src/index.ts",
-			"default": "./src/index.ts"
-		},
-		"./src": {
-			"types": "./src/index.ts",
-			"default": "./src/index.ts"
-		}
-	},
-	"files": [
-		"src",
-		"!src/benchmarks",
-		"dist",
-		"!dist/benchmarks",
-		"!dist/*.tsbuildinfo",
-		"include",
-		"README.md",
-		"tsconfig.json",
-		"tsconfig.package.json"
-	],
 	"scripts": {
-		"build": "rm -rf ./dist ./include && rbxtsc -p -i ./include --type package && lumine",
+		"build": "rbxtsc -p --type package && lumine",
 		"test": "bun test tests",
-		"bench": "bun benchmarks/world.bench.ts",
-		"playground": "bun playground/tower-defense.ts",
-		"playground:gui": "bun playground/gui-server.ts",
-		"check:playground": "bun build playground/tower-defense.ts --target=bun --outdir=/tmp/msrecs-playground-check && bun build playground/gui.ts --target=browser --outdir=/tmp/msrecs-playground-check",
 		"lint": "biome check .",
 		"format": "biome format --write .",
 		"typecheck": "tsc -p tsconfig.json --noEmit"

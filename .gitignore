@@ -5,12 +5,8 @@ include
 # output
 out
 dist
-benchmark-dist
-playground/.gui
 *.tgz
 *.rbxl
-game-output.log
-jest-output.log
 
 # code coverage
 coverage
