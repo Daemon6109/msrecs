@@ -1,8 +1,0 @@
-{
-	"extends": "./tsconfig.json",
-	"compilerOptions": {
-		"tsBuildInfoFile": "dist/tsconfig.package.tsbuildinfo"
-	},
-	"include": ["src"],
-	"exclude": ["src/benchmarks", "src/**/*.server.ts"]
-}

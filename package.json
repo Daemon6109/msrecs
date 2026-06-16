@@ -26,7 +26,7 @@
 		"tsconfig.package.json"
 	],
 	"scripts": {
-		"build": "rm -rf ./dist ./include && rbxtsc -p tsconfig.package.json -i ./include --type package && (lumine || ../lumine/package/dist/lumine)",
+		"build": "rm -rf ./dist ./include && rbxtsc -p -i ./include --type package && lumine",
 		"test": "bun test tests",
 		"bench": "bun benchmarks/world.bench.ts",
 		"playground": "bun playground/tower-defense.ts",
