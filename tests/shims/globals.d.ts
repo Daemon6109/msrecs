@@ -4,6 +4,7 @@ declare global {
 	const os: {
 		clock(): number;
 	};
+	const assert: (condition: unknown, message?: string) => asserts condition;
 
 	interface Array<T> {
 		clear(): void;

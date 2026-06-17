@@ -1,14 +1,13 @@
-import type { ComponentType, Entity } from "./types";
+import type {
+	ComponentType,
+	Entity,
+	EntityHandle,
+	EntityRecord,
+} from "./types";
 
 interface MutableEntityRecord {
 	alive: boolean;
 	generation: number;
-}
-
-interface ArchetypeStore {
-	componentIds: string[];
-	entities: Entity[];
-	entityToIndex: Map<Entity, number>;
 }
 
 interface ComponentStore {
@@ -20,7 +19,6 @@ interface ComponentStore {
 export class World {
 	private nextEntityId = 1;
 	private readonly records = new Map<Entity, MutableEntityRecord>();
-	private readonly archetypes = new Map<string, ArchetypeStore>();
 	private readonly components = new Map<string, ComponentStore>();
 
 	public createEntity(): Entity {
@@ -49,39 +47,6 @@ export class World {
 		return entities;
 	}
 
-	private archetypeMatches(
-		archetypeStore: ArchetypeStore,
-		componentTypes: readonly ComponentType<unknown>[],
-	): boolean {
-		for (const componentType of componentTypes) {
-			if (archetypeStore.componentIds.indexOf(componentType.id) < 0) {
-				return false;
-			}
-		}
-
-		return true;
-	}
-
-	private queryArchetypes(
-		componentTypes: readonly ComponentType<unknown>[],
-	): Entity[] {
-		const entities: Entity[] = [];
-
-		this.archetypes.forEach((archetypeStore) => {
-			if (!this.archetypeMatches(archetypeStore, componentTypes)) {
-				return;
-			}
-
-			for (const entity of archetypeStore.entities) {
-				if (this.isAlive(entity)) {
-					entities.push(entity);
-				}
-			}
-		});
-
-		return entities;
-	}
-
 	public has<T>(entity: Entity, componentType: ComponentType<T>): boolean {
 		return (
 			this.isAlive(entity) &&
@@ -92,10 +57,6 @@ export class World {
 	public query(...componentTypes: ComponentType<unknown>[]): Entity[] {
 		if (componentTypes.size() === 0) {
 			return this.getLivingEntities();
-		}
-
-		if (componentTypes.size() > 1) {
-			return this.queryArchetypes(componentTypes);
 		}
 
 		let smallestStore: ComponentStore | undefined;
@@ -139,5 +100,74 @@ export class World {
 		}
 
 		return entities;
+	}
+
+	public createEntityHandle(): EntityHandle {
+		const entity = this.createEntity();
+		const record = this.records.get(entity);
+
+		assert(record, `Entity record missing for entity ${entity}`);
+
+		return {
+			id: entity,
+			generation: record.generation,
+		};
+	}
+
+	public isHandleAlive(handle: EntityHandle): boolean {
+		const record = this.records.get(handle.id);
+		if (record === undefined) {
+			return false;
+		}
+
+		return record.alive === true && handle.generation === record.generation;
+	}
+
+	public resolveEntity(handle: EntityHandle): Entity | undefined {
+		if (this.isHandleAlive(handle)) {
+			return handle.id;
+		}
+		return undefined;
+	}
+
+	public getEntityRecord(entity: Entity): EntityRecord | undefined {
+		const record = this.records.get(entity);
+
+		if (record === undefined) {
+			return undefined;
+		}
+
+		return {
+			alive: record.alive,
+			generation: record.generation,
+		};
+	}
+
+	public deleteEntity(entity: Entity) {
+		const record = this.records.get(entity);
+		if (record === undefined || record.alive === false) {
+			return;
+		}
+
+		record.alive = false;
+		record.generation++;
+	}
+
+	private getOrCreateComponentStore(
+		componentType: ComponentType<unknown>,
+	): ComponentStore {
+		let componentStore = this.components.get(componentType.id);
+		if (componentStore) {
+			return componentStore;
+		}
+		componentStore = {
+			entities: [],
+			entityToIndex: new Map<Entity, number>(),
+			values: new Map<Entity, unknown>(),
+		};
+
+		this.components.set(componentType.id, componentStore);
+
+		return componentStore;
 	}
 }

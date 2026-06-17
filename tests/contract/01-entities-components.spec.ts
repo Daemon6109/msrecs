@@ -17,45 +17,45 @@ describe("contract: entities and components", () => {
 		expect(world.query()).toEqual([first, second, third]);
 	});
 
-	// it("supports generation-safe handles and idempotent deletion", () => {
-	// 	const world = new World();
-	// 	const handle = world.createEntityHandle();
-	// 	const entity = handle.id;
+	it("supports generation-safe handles and idempotent deletion", () => {
+		const world = new World();
+		const handle = world.createEntityHandle();
+		const entity = handle.id;
 
-	// 	expect(world.resolveEntity(handle)).toBe(entity);
-	// 	expect(world.isHandleAlive(handle)).toBe(true);
-	// 	expect(world.getEntityRecord(entity)).toEqual({
-	// 		alive: true,
-	// 		generation: 0,
-	// 	});
+		expect(world.resolveEntity(handle)).toBe(entity);
+		expect(world.isHandleAlive(handle)).toBe(true);
+		expect(world.getEntityRecord(entity)).toEqual({
+			alive: true,
+			generation: 0,
+		});
 
-	// 	world.deleteEntity(entity);
-	// 	world.deleteEntity(entity);
+		world.deleteEntity(entity);
+		world.deleteEntity(entity);
 
-	// 	expect(world.isAlive(entity)).toBe(false);
-	// 	expect(world.isHandleAlive(handle)).toBe(false);
-	// 	expect(world.resolveEntity(handle)).toBeUndefined();
-	// 	expect(world.getEntityRecord(entity)).toEqual({
-	// 		alive: false,
-	// 		generation: 1,
-	// 	});
-	// });
+		expect(world.isAlive(entity)).toBe(false);
+		expect(world.isHandleAlive(handle)).toBe(false);
+		expect(world.resolveEntity(handle)).toBeUndefined();
+		expect(world.getEntityRecord(entity)).toEqual({
+			alive: false,
+			generation: 1,
+		});
+	});
 
-	// it("sets gets updates replaces removes and checks components", () => {
-	// 	const world = new World();
-	// 	const entity = world.createEntity();
+	it("sets gets updates replaces removes and checks components", () => {
+		const world = new World();
+		const entity = world.createEntity();
 
-	// 	world.set(entity, Position, { x: 1, y: 2 });
-	// 	world.set(entity, Health, { current: 50, max: 100 });
+		world.set(entity, Position, { x: 1, y: 2 });
+		world.set(entity, Health, { current: 50, max: 100 });
 
-	// 	expect(world.get(entity, Position)).toEqual({ x: 1, y: 2 });
-	// 	expect(world.has(entity, Position)).toBe(true);
-	// 	expect(world.has(entity, Velocity)).toBe(false);
+		expect(world.get(entity, Position)).toEqual({ x: 1, y: 2 });
+		expect(world.has(entity, Position)).toBe(true);
+		expect(world.has(entity, Velocity)).toBe(false);
 
-	// 	const updated = world.update(entity, Health, (health) => ({
-	// 		...health,
-	// 		current: health.current + 25,
-	// 	}));
+		const updated = world.update(entity, Health, (health) => ({
+			...health,
+			current: health.current + 25,
+		}));
 
 	// 	expect(updated).toEqual({ current: 75, max: 100 });
 	// 	expect(world.get(entity, Health)).toEqual({ current: 75, max: 100 });

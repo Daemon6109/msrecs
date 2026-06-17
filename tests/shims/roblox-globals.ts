@@ -14,6 +14,12 @@ function robloxTypeOf(value: unknown): string {
 	return typeof value;
 }
 
+function robloxAssert(condition: unknown, message?: string): asserts condition {
+	if (condition === false || condition === undefined || condition === null) {
+		throw new Error(message ?? "assertion failed");
+	}
+}
+
 const globals = globalThis as Record<string, unknown>;
 
 globals.error ??= robloxError;
@@ -21,6 +27,7 @@ globals.typeOf ??= robloxTypeOf;
 globals.os ??= {
 	clock: () => performance.now() / 1000,
 };
+globals.assert ??= robloxAssert;
 
 const arrayPrototype = Array.prototype as Record<string, unknown>;
 
