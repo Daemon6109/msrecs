@@ -143,7 +143,7 @@ export class World {
 		};
 	}
 
-	public deleteEntity(entity: Entity) {
+	public deleteEntity(entity: Entity): void {
 		const record = this.records.get(entity);
 		if (record === undefined || record.alive === false) {
 			return;
@@ -171,13 +171,20 @@ export class World {
 		return componentStore;
 	}
 
-	public set<T>(entity: Entity, componentType: ComponentType<T>, value: T) {
+	public set<T>(
+		entity: Entity,
+		componentType: ComponentType<T>,
+		value: T,
+	): void {
 		assert(this.isAlive(entity), `Entity is dead ${entity}`);
 
 		const componentStore = this.getOrCreateComponentStore(componentType);
 		const hadComponent = componentStore.values.has(entity);
 		if (!hadComponent) {
-			componentStore.entityToIndex.set(entity, componentStore.entities.size());
+			componentStore.entityToIndex.set(
+				entity,
+				componentStore.entities.size(),
+			);
 			componentStore.entities.push(entity);
 		}
 		componentStore.values.set(entity, value);
@@ -197,5 +204,50 @@ export class World {
 		}
 
 		return componentStore.values.get(entity) as T | undefined;
+	}
+
+	public update<T>(
+		entity: Entity,
+		componentType: ComponentType<T>,
+		updater: (component: T) => T,
+	): T {
+		const current = this.get(entity, componentType);
+		assert(
+			current !== undefined,
+			`ComponentType is undefined ${entity}, ${componentType.id}`,
+		);
+
+		const updated = updater(current);
+
+		this.set(entity, componentType, updated);
+
+		return updated;
+	}
+
+	public remove<T>(entity: Entity, componentType: ComponentType<T>): void {
+		const componentStore = this.components.get(componentType.id);
+		if (componentStore === undefined) {
+			return;
+		}
+
+		const removedIndex = componentStore.entityToIndex.get(entity);
+		if (removedIndex === undefined) {
+			return;
+		}
+
+		const lastIndex = componentStore.entities.size() - 1;
+		const lastEntity = componentStore.entities[lastIndex];
+		if (lastEntity === undefined) {
+			return;
+		}
+
+		if (removedIndex !== lastIndex) {
+			componentStore.entities[removedIndex] = lastEntity;
+			componentStore.entityToIndex.set(lastEntity, removedIndex);
+		}
+
+		componentStore.entityToIndex.delete(entity);
+		componentStore.entities.remove(lastIndex);
+		componentStore.values.delete(entity);
 	}
 }

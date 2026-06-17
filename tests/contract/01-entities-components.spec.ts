@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { World } from "../../src";
 
-// import { Boss, Enemy, Health, Position, Velocity } from "./fixtures";
+import { Health, Position, Velocity } from "./fixtures";
 
 describe("contract: entities and components", () => {
 	it("creates monotonically increasing living entities", () => {
