@@ -7,12 +7,12 @@ export class Query<TComponents extends readonly ComponentType<unknown>[]> {
 		private readonly componentTypes: TComponents,
 	) {}
 
-	public count(): number {
-		return this.world.query(...this.componentTypes).size();
-	}
-
 	public entities(): Entity[] {
 		return this.world.query(...this.componentTypes);
+	}
+
+	public count(): number {
+		return this.entities().size();
 	}
 
 	public first(): Entity | undefined {
