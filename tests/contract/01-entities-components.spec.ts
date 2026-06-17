@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { World } from "../../src";
+
 // import { Boss, Enemy, Health, Position, Velocity } from "./fixtures";
 
 describe("contract: entities and components", () => {
@@ -57,17 +58,17 @@ describe("contract: entities and components", () => {
 			current: health.current + 25,
 		}));
 
-	// 	expect(updated).toEqual({ current: 75, max: 100 });
-	// 	expect(world.get(entity, Health)).toEqual({ current: 75, max: 100 });
+		expect(updated).toEqual({ current: 75, max: 100 });
+		expect(world.get(entity, Health)).toEqual({ current: 75, max: 100 });
 
-	// 	world.set(entity, Position, { x: 9, y: 9 });
-	// 	expect(world.get(entity, Position)).toEqual({ x: 9, y: 9 });
+		world.set(entity, Position, { x: 9, y: 9 });
+		expect(world.get(entity, Position)).toEqual({ x: 9, y: 9 });
 
-	// 	world.remove(entity, Position);
-	// 	expect(world.get(entity, Position)).toBeUndefined();
-	// 	expect(world.has(entity, Position)).toBe(false);
-	// 	expect(world.has(entity, Health)).toBe(true);
-	// });
+		world.remove(entity, Position);
+		expect(world.get(entity, Position)).toBeUndefined();
+		expect(world.has(entity, Position)).toBe(false);
+		expect(world.has(entity, Health)).toBe(true);
+	});
 
 	// it("supports tags as zero-data boolean components", () => {
 	// 	const world = new World();

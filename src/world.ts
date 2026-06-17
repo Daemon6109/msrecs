@@ -157,7 +157,7 @@ export class World {
 		componentType: ComponentType<unknown>,
 	): ComponentStore {
 		let componentStore = this.components.get(componentType.id);
-		if (componentStore) {
+		if (componentStore !== undefined) {
 			return componentStore;
 		}
 		componentStore = {
@@ -169,5 +169,33 @@ export class World {
 		this.components.set(componentType.id, componentStore);
 
 		return componentStore;
+	}
+
+	public set<T>(entity: Entity, componentType: ComponentType<T>, value: T) {
+		assert(this.isAlive(entity), `Entity is dead ${entity}`);
+
+		const componentStore = this.getOrCreateComponentStore(componentType);
+		const hadComponent = componentStore.values.has(entity);
+		if (!hadComponent) {
+			componentStore.entityToIndex.set(entity, componentStore.entities.size());
+			componentStore.entities.push(entity);
+		}
+		componentStore.values.set(entity, value);
+	}
+
+	public get<T>(
+		entity: Entity,
+		componentType: ComponentType<T>,
+	): T | undefined {
+		if (!this.isAlive(entity)) {
+			return undefined;
+		}
+
+		const componentStore = this.components.get(componentType.id);
+		if (componentStore === undefined) {
+			return undefined;
+		}
+
+		return componentStore.values.get(entity) as T | undefined;
 	}
 }
