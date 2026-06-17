@@ -18,3 +18,9 @@ export interface Component<T> {
 export type ComponentType<T> = Component<T>;
 
 export type Tag = Component<true>;
+
+export type QueryData<T extends readonly ComponentType<unknown>[]> = {
+	[Index in keyof T]: T[Index] extends ComponentType<infer Value>
+		? Value
+		: never;
+};

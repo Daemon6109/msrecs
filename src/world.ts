@@ -1,3 +1,4 @@
+import { Query } from "./query";
 import type {
 	ComponentType,
 	Entity,
@@ -270,5 +271,11 @@ export class World {
 
 	public hasTag(entity: Entity, tag: Tag): boolean {
 		return this.has(entity, tag);
+	}
+
+	public queryObject<T extends readonly ComponentType<unknown>[]>(
+		componentTypes: T,
+	): Query<T> {
+		return new Query(this, componentTypes);
 	}
 }
