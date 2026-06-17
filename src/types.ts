@@ -16,3 +16,5 @@ export interface Component<T> {
 }
 
 export type ComponentType<T> = Component<T>;
+
+export type Tag = Component<true>;

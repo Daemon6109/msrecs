@@ -3,7 +3,7 @@ import {
 	// defineEvent,
 	// defineRelation,
 	// defineResource,
-	// defineTag,
+	defineTag,
 } from "../../src";
 
 export interface PositionData {
@@ -41,9 +41,9 @@ export const Velocity = defineComponent<VelocityData>("contract/Velocity");
 export const Health = defineComponent<HealthData>("contract/Health");
 export const Mana = defineComponent<ManaData>("contract/Mana");
 
-// export const Enemy = defineTag("contract/Enemy");
-// export const Boss = defineTag("contract/Boss");
-// export const Frozen = defineTag("contract/Frozen");
+export const Enemy = defineTag("contract/Enemy");
+export const Boss = defineTag("contract/Boss");
+export const Frozen = defineTag("contract/Frozen");
 
 // export const GameClock = defineResource<GameClockData>("contract/GameClock");
 // export const WaveState = defineResource<WaveStateData>("contract/WaveState");

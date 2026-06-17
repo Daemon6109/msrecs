@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { World } from "../../src";
 
-import { Health, Position, Velocity } from "./fixtures";
+import { Boss, Enemy, Frozen, Health, Position, Velocity } from "./fixtures";
 
 describe("contract: entities and components", () => {
 	it("creates monotonically increasing living entities", () => {
@@ -70,52 +70,52 @@ describe("contract: entities and components", () => {
 		expect(world.has(entity, Health)).toBe(true);
 	});
 
-	// it("supports tags as zero-data boolean components", () => {
-	// 	const world = new World();
-	// 	const entity = world.createEntity();
+	it("supports tags as zero-data boolean components", () => {
+		const world = new World();
+		const entity = world.createEntity();
 
-	// 	world.addTag(entity, Enemy);
+		world.addTag(entity, Enemy);
 
-	// 	expect(world.hasTag(entity, Enemy)).toBe(true);
-	// 	expect(world.hasTag(entity, Boss)).toBe(false);
-	// 	expect(world.query(Enemy)).toEqual([entity]);
+		expect(world.hasTag(entity, Enemy)).toBe(true);
+		expect(world.hasTag(entity, Boss)).toBe(false);
+		expect(world.query(Enemy)).toEqual([entity]);
 
-	// 	world.removeTag(entity, Enemy);
+		world.removeTag(entity, Enemy);
 
-	// 	expect(world.hasTag(entity, Enemy)).toBe(false);
-	// 	expect(world.query(Enemy)).toEqual([]);
-	// });
+		expect(world.hasTag(entity, Enemy)).toBe(false);
+		expect(world.query(Enemy)).toEqual([]);
+	});
 
-	// it("rejects invalid writes and missing updates", () => {
-	// 	const world = new World();
-	// 	const entity = world.createEntity();
+	it("rejects invalid writes and missing updates", () => {
+		const world = new World();
+		const entity = world.createEntity();
 
-	// 	expect(() => {
-	// 		world.update(entity, Health, (health) => health);
-	// 	}).toThrow();
+		expect(() => {
+			world.update(entity, Health, (health) => health);
+		}).toThrow();
 
-	// 	world.deleteEntity(entity);
+		world.deleteEntity(entity);
 
-	// 	expect(() => {
-	// 		world.set(entity, Position, { x: 1, y: 2 });
-	// 	}).toThrow();
-	// });
+		expect(() => {
+			world.set(entity, Position, { x: 1, y: 2 });
+		}).toThrow();
+	});
 
-	// it("removes every component and tag when deleting an entity", () => {
-	// 	const world = new World();
-	// 	const entity = world.createEntity();
+	it("removes every component and tag when deleting an entity", () => {
+		const world = new World();
+		const entity = world.createEntity();
 
-	// 	world.set(entity, Position, { x: 1, y: 2 });
-	// 	world.set(entity, Velocity, { x: 3, y: 4 });
-	// 	world.addTag(entity, Enemy);
+		world.set(entity, Position, { x: 1, y: 2 });
+		world.set(entity, Velocity, { x: 3, y: 4 });
+		world.addTag(entity, Enemy);
 
-	// 	world.deleteEntity(entity);
+		world.deleteEntity(entity);
 
-	// 	expect(world.get(entity, Position)).toBeUndefined();
-	// 	expect(world.get(entity, Velocity)).toBeUndefined();
-	// 	expect(world.hasTag(entity, Enemy)).toBe(false);
-	// 	expect(world.query(Position)).toEqual([]);
-	// 	expect(world.query(Velocity)).toEqual([]);
-	// 	expect(world.query(Enemy)).toEqual([]);
-	// });
+		expect(world.get(entity, Position)).toBeUndefined();
+		expect(world.get(entity, Velocity)).toBeUndefined();
+		expect(world.hasTag(entity, Enemy)).toBe(false);
+		expect(world.query(Position)).toEqual([]);
+		expect(world.query(Velocity)).toEqual([]);
+		expect(world.query(Enemy)).toEqual([]);
+	});
 });

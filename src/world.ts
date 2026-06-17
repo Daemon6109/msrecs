@@ -3,6 +3,7 @@ import type {
 	Entity,
 	EntityHandle,
 	EntityRecord,
+	Tag,
 } from "./types";
 
 interface MutableEntityRecord {
@@ -143,6 +144,31 @@ export class World {
 		};
 	}
 
+	private removeFromComponentStore(
+		componentStore: ComponentStore,
+		entity: Entity,
+	): void {
+		const removedIndex = componentStore.entityToIndex.get(entity);
+		if (removedIndex === undefined) {
+			return;
+		}
+
+		const lastIndex = componentStore.entities.size() - 1;
+		const lastEntity = componentStore.entities[lastIndex];
+		if (lastEntity === undefined) {
+			return;
+		}
+
+		if (removedIndex !== lastIndex) {
+			componentStore.entities[removedIndex] = lastEntity;
+			componentStore.entityToIndex.set(lastEntity, removedIndex);
+		}
+
+		componentStore.entityToIndex.delete(entity);
+		componentStore.entities.remove(lastIndex);
+		componentStore.values.delete(entity);
+	}
+
 	public deleteEntity(entity: Entity): void {
 		const record = this.records.get(entity);
 		if (record === undefined || record.alive === false) {
@@ -151,6 +177,10 @@ export class World {
 
 		record.alive = false;
 		record.generation++;
+
+		this.components.forEach((componentStore) => {
+			this.removeFromComponentStore(componentStore, entity);
+		});
 	}
 
 	private getOrCreateComponentStore(
@@ -181,10 +211,7 @@ export class World {
 		const componentStore = this.getOrCreateComponentStore(componentType);
 		const hadComponent = componentStore.values.has(entity);
 		if (!hadComponent) {
-			componentStore.entityToIndex.set(
-				entity,
-				componentStore.entities.size(),
-			);
+			componentStore.entityToIndex.set(entity, componentStore.entities.size());
 			componentStore.entities.push(entity);
 		}
 		componentStore.values.set(entity, value);
@@ -230,24 +257,18 @@ export class World {
 			return;
 		}
 
-		const removedIndex = componentStore.entityToIndex.get(entity);
-		if (removedIndex === undefined) {
-			return;
-		}
+		this.removeFromComponentStore(componentStore, entity);
+	}
 
-		const lastIndex = componentStore.entities.size() - 1;
-		const lastEntity = componentStore.entities[lastIndex];
-		if (lastEntity === undefined) {
-			return;
-		}
+	public addTag(entity: Entity, tag: Tag): void {
+		this.set(entity, tag, true);
+	}
 
-		if (removedIndex !== lastIndex) {
-			componentStore.entities[removedIndex] = lastEntity;
-			componentStore.entityToIndex.set(lastEntity, removedIndex);
-		}
+	public removeTag(entity: Entity, tag: Tag): void {
+		this.remove(entity, tag);
+	}
 
-		componentStore.entityToIndex.delete(entity);
-		componentStore.entities.remove(lastIndex);
-		componentStore.values.delete(entity);
+	public hasTag(entity: Entity, tag: Tag): boolean {
+		return this.has(entity, tag);
 	}
 }
